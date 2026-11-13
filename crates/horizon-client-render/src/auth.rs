@@ -70,7 +70,7 @@ impl AuthSession {
             .ok_or("the session has no access token")?;
         let user_type = field("user_type").unwrap_or("msa");
         match user_type {
-            "msa" | "elyby" | "offline" | "legacy" => {},
+            "msa" | "elyby" | "offline" | "legacy" => {}
             other => return Err(format!("unsupported user_type: {other}")),
         }
         Ok(Self {

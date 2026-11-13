@@ -642,17 +642,14 @@ fn owns_game(ep: &Endpoints, token: &str) -> Result<bool, String> {
 /// Authentication provider for an account.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum AuthProvider {
+    #[default]
     Microsoft,
     ElyBy,
     Offline,
 }
 
-impl Default for AuthProvider {
-    fn default() -> Self {
-        Self::Microsoft
-    }
-}
 
 impl std::fmt::Display for AuthProvider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

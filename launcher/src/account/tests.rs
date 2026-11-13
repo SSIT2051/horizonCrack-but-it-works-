@@ -233,6 +233,7 @@ fn the_whole_chain() {
         Account {
             uuid: UUID.into(),
             name: "Notch".into(),
+            provider: AuthProvider::Microsoft,
             skin: Some((
                 "http://textures.minecraft.net/texture/abc".into(),
                 "slim".into()
@@ -314,6 +315,7 @@ fn notch() -> Account {
     Account {
         uuid: UUID.into(),
         name: "Notch".into(),
+        provider: AuthProvider::Microsoft,
         skin: None,
         cape: None,
     }
@@ -322,11 +324,13 @@ fn notch() -> Account {
 /// A signed-in account's secrets: a token good for two hours, and the last ownership answer.
 fn secrets(token: &str, owns: bool) -> Secrets {
     Secrets {
+        provider: AuthProvider::Microsoft,
         refresh_token: "ms-refresh-1".into(),
         sign_in_required: false,
         minecraft_token: token.into(),
         minecraft_expires_at: now() + 7200,
         xuid: None,
+        elyby_client_id: None,
         owns,
     }
 }
@@ -346,6 +350,7 @@ fn refresh_only_when_the_token_runs_out() {
     let (m, ep) = mock(|_| {});
     let Check::Owns(_, kept) = check(
         &ep,
+        &ElyByEndpoints::live(),
         Some("test-client"),
         &notch(),
         secrets("mc-token", true),
@@ -359,7 +364,7 @@ fn refresh_only_when_the_token_runs_out() {
         minecraft_expires_at: now() + 60,
         ..kept.clone()
     };
-    let Check::Owns(renewed_account, renewed) = check(&ep, Some("test-client"), &notch(), stale)
+    let Check::Owns(renewed_account, renewed) = check(&ep, &ElyByEndpoints::live(), Some("test-client"), &notch(), stale)
     else {
         panic!("owns");
     };
@@ -377,7 +382,7 @@ fn refresh_only_when_the_token_runs_out() {
         ..kept
     };
     assert!(matches!(
-        check(&ep, Some("test-client"), &notch(), revoked),
+        check(&ep, &ElyByEndpoints::live(), Some("test-client"), &notch(), revoked),
         Check::NoAnswer(e, s) if e == SIGN_IN_AGAIN && s.owns
     ));
 }
@@ -411,6 +416,7 @@ fn splitscreen_gets_the_other_accounts_that_still_hold() {
     let other = |name: &str, uuid: &str| Account {
         uuid: uuid.into(),
         name: name.into(),
+        provider: AuthProvider::Microsoft,
         skin: None,
         cape: None,
     };
@@ -491,6 +497,7 @@ fn splitscreen_never_hands_over_an_account_sent_back_to_sign_in() {
     let eve = Account {
         uuid: "e".into(),
         name: "Eve".into(),
+        provider: AuthProvider::Microsoft,
         skin: None,
         cape: None,
     };
@@ -669,6 +676,7 @@ fn any_owner_opens_the_gate_and_the_one_who_plays_brings_the_session() {
     accounts.accounts.push(Account {
         uuid: "other".into(),
         name: "Alex".into(),
+        provider: AuthProvider::Microsoft,
         skin: None,
         cape: None,
     });
@@ -707,6 +715,7 @@ fn the_game_plays_only_as_an_account_that_owns_it() {
     accounts.accounts.push(Account {
         uuid: "other".into(),
         name: "Alex".into(),
+        provider: AuthProvider::Microsoft,
         skin: None,
         cape: None,
     });
@@ -810,15 +819,18 @@ fn accounts_keep_secrets_in_the_store_only() {
     let account = Account {
         uuid: UUID.into(),
         name: "Notch".into(),
+        provider: AuthProvider::Microsoft,
         skin: None,
         cape: None,
     };
     let secrets = Secrets {
+        provider: AuthProvider::Microsoft,
         refresh_token: "r".into(),
         sign_in_required: false,
         minecraft_token: "mc-secret".into(),
         minecraft_expires_at: 1,
         xuid: None,
+        elyby_client_id: None,
         owns: true,
     };
     accounts.add(&store, account.clone(), &secrets).unwrap();
@@ -1046,6 +1058,7 @@ fn has_owner_asks_the_selected_account_first() {
             Account {
                 uuid: "other".into(),
                 name: "Other".into(),
+                provider: AuthProvider::Microsoft,
                 skin: None,
                 cape: None,
             },
@@ -1112,15 +1125,18 @@ fn session_files_are_private_and_complete() {
     let account = Account {
         uuid: UUID.into(),
         name: "Notch".into(),
+        provider: AuthProvider::Microsoft,
         skin: None,
         cape: None,
     };
     let secrets = Secrets {
+        provider: AuthProvider::Microsoft,
         refresh_token: "r".into(),
         sign_in_required: false,
         minecraft_token: "mc-token".into(),
         minecraft_expires_at: 1,
         xuid: Some("25".into()),
+        elyby_client_id: None,
         owns: true,
     };
     let path = write_session_file(&dir, &account, &secrets).unwrap();
@@ -1166,6 +1182,7 @@ fn play_as_picks_a_signed_in_account() {
         accounts: vec![Account {
             uuid: "abc".into(),
             name: "Ludo".into(),
+            provider: AuthProvider::Microsoft,
             skin: None,
             cape: None,
         }],
@@ -2434,6 +2451,7 @@ fn a_launch_as_another_account_leaves_the_selected_one() {
     accounts.accounts.push(Account {
         uuid: alex.into(),
         name: "Alex".into(),
+        provider: AuthProvider::Microsoft,
         skin: None,
         cape: None,
     });
@@ -2479,6 +2497,7 @@ fn splitscreen_stops_renewing_other_accounts_once_out_of_time() {
     let cal = Account {
         uuid: "c".into(),
         name: "Cal".into(),
+        provider: AuthProvider::Microsoft,
         skin: None,
         cape: None,
     };
@@ -2552,6 +2571,7 @@ fn a_launch_saving_late_keeps_sign_ins_and_outs_made_meanwhile() {
     let other = |uuid: &str, name: &str| Account {
         uuid: uuid.into(),
         name: name.into(),
+        provider: AuthProvider::Microsoft,
         skin: None,
         cape: None,
     };

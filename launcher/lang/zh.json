@@ -1238,5 +1238,8 @@
   "In the last build, on Horizon {commit} for {mods}, not on {horizon}": "上次构建：因 {mods} 在 Horizon {commit} 上，而非 {horizon}",
   "In the last build, on {horizon}": "上次构建：在 {horizon} 上",
   "Duplicate native mod {id}.": "Duplicate native mod {id}.",
-  "Native and content mod ids differ.": "Native and content mod ids differ."
+  "Native and content mod ids differ.": "Native and content mod ids differ.",
+  "Horizon needs an account that owns Minecraft: Java Edition, like other launchers.": "Horizon needs an account that owns Minecraft: Java Edition, like other launchers.",
+  "Play Offline": "Play Offline",
+  "Sign in with Ely.by": "Sign in with Ely.by"
 }

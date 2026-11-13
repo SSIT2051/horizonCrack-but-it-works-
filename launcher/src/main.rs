@@ -2024,6 +2024,22 @@ impl Launcher {
         self.begin_sign_in(None);
     }
 
+    /// Start Ely.by OAuth2 sign-in flow.
+    fn start_elyby_sign_in(&mut self) {
+        self.cancel_sign_in();
+        self.sign_in_state = Some(SignInState::Starting);
+        // TODO: Implement Ely.by OAuth2 flow
+        // For now, show a message that it's not yet implemented
+        self.sign_in_state = Some(SignInState::Done(Err("Ely.by sign-in not yet implemented".into())));
+    }
+
+    /// Play offline without any account.
+    fn play_offline(&mut self) {
+        self.cancel_sign_in();
+        // Create an offline account and play
+        self.create_offline_account_and_play();
+    }
+
     fn re_sign_in(&mut self, uuid: &str) {
         if let Some(account) = self.accounts.find(uuid).cloned() {
             self.begin_sign_in(Some(account));
@@ -2050,6 +2066,44 @@ impl Launcher {
         }
         self.sign_in_state = None;
         self.sign_in_target = None;
+    }
+
+    /// Create an offline account and start the game with it.
+    fn create_offline_account_and_play(&mut self) {
+        use crate::account::{create_offline_account, store, Accounts};
+        
+        // Prompt for a name (for now use a default)
+        let name = "Player".to_string();
+        
+        match create_offline_account(&name) {
+            Ok((account, secrets)) => {
+                // Save to accounts.json
+                let mut accounts = Accounts::load();
+                if let Err(e) = accounts.add(store(), account.clone(), &secrets) {
+                    self.client_error = Some(format!("Failed to create offline account: {e}"));
+                    return;
+                }
+                if let Err(e) = accounts.save() {
+                    self.client_error = Some(format!("Failed to save offline account: {e}"));
+                    return;
+                }
+                self.accounts = accounts;
+                
+                // Set as selected and start the game
+                if let Err(e) = self.accounts.play_as(&account.uuid) {
+                    self.client_error = Some(e);
+                    return;
+                }
+                
+                // Trigger a play
+                self.owner = Some(true);
+                self.owner_screen_open = false;
+                self.start_client("offline".to_string());
+            }
+            Err(e) => {
+                self.client_error = Some(format!("Failed to create offline account: {e}"));
+            }
+        }
     }
 
     fn choose_folder(&mut self, cx: &mut Context<Self>) {
@@ -5937,6 +5991,7 @@ mod tests {
         let completed = SignInState::Done(Ok(horizon_launcher::account::Account {
             uuid: "11111111111111111111111111111111".into(),
             name: "TestAccount".into(),
+            provider: horizon_launcher::account::AuthProvider::Microsoft,
             skin: None,
             cape: None,
         }));

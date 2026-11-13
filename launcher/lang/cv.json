@@ -1238,5 +1238,8 @@
   "In the last build, on Horizon {commit} for {mods}, not on {horizon}": "Юлашки пухӑмра, {mods} валли Horizon {commit} ҫинче, {horizon} ҫинче мар",
   "In the last build, on {horizon}": "Юлашки пухӑмра, {horizon} ҫинче",
   "Duplicate native mod {id}.": "Duplicate native mod {id}.",
-  "Native and content mod ids differ.": "Native and content mod ids differ."
+  "Native and content mod ids differ.": "Native and content mod ids differ.",
+  "Horizon needs an account that owns Minecraft: Java Edition, like other launchers.": "Horizon needs an account that owns Minecraft: Java Edition, like other launchers.",
+  "Play Offline": "Play Offline",
+  "Sign in with Ely.by": "Sign in with Ely.by"
 }

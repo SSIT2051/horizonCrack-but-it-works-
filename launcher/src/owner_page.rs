@@ -262,7 +262,7 @@ impl Launcher {
             .child(card)
     }
 
-    /// The screen in the glass look: a dialog plate over the dimmed, blurred launcher (the
+/// The screen in the glass look: a dialog plate over the dimmed, blurred launcher (the
     /// mockup's modals), its Sign in the Account card's white Microsoft button, its code in the
     /// card's inner panel.
     fn glass_owner_screen(
@@ -290,7 +290,7 @@ impl Launcher {
             .w(px(520.))
             .max_w_full()
             .p(px(32.))
-            .child(ui::text(13., FontWeight::MEDIUM, ink::QUIET).child(tr("Microsoft account")))
+            .child(ui::text(13., FontWeight::MEDIUM, ink::QUIET).child(tr("Account")))
             .child(
                 div()
                     .mt(px(8.))
@@ -308,11 +308,11 @@ impl Launcher {
                     .flex_col()
                     .gap(px(8.))
                     .child(ui::text(14., FontWeight::NORMAL, ink::BODY).child(tr(
-                        "Horizon needs a Microsoft account that owns Minecraft: Java Edition, like other launchers.",
+                        "Horizon needs an account that owns Minecraft: Java Edition, like other launchers.",
                     )))
                     .child(ui::text(14., FontWeight::NORMAL, ink::BODY).child(tr(
                         "No Minecraft install needed: Horizon downloads it from Mojang for your account.",
-))),
+                    ))),
             );
         card = match state {
             Shown::Code(uri, user_code) => {
@@ -433,10 +433,10 @@ impl Launcher {
             }
             Shown::Starting(_) => None,
             Shown::Error(_) if !configured => None,
-            _ => Some(
-                keyboard(
+            _ => {
+                let microsoft_button = keyboard(
                     div()
-                        .id("owner-sign-in")
+                        .id("owner-sign-in-ms")
                         .flex()
                         .items_center()
                         .justify_center()
@@ -458,9 +458,71 @@ impl Launcher {
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                     this.sign_in_to_play();
                     cx.notify();
-                }))
-                .into_any_element(),
-            ),
+                }));
+
+                let elyby_button = keyboard(
+                    div()
+                        .id("owner-sign-in-elyby")
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .gap(px(10.))
+                        .h(px(44.))
+                        .px(px(20.))
+                        .rounded(px(radius::ROW))
+                        .bg(gpui::rgb(0x2d2d2d))
+                        .cursor_pointer()
+                        .hover(|s| s.opacity(0.9))
+                        .font_family(horizon_theme::glass::FONT)
+                        .text_size(px(15.))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(gpui::white())
+                        .child(tr("Sign in with Ely.by")),
+                    &t,
+                )
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                    this.start_elyby_sign_in();
+                    cx.notify();
+                }));
+
+                let offline_button = keyboard(
+                    div()
+                        .id("owner-play-offline")
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .gap(px(10.))
+                        .h(px(44.))
+                        .px(px(20.))
+                        .rounded(px(radius::ROW))
+                        .bg(gpui::rgb(0x1a1a1a))
+                        .border_1()
+                        .border_color(gpui::rgb(0x3a3a3a))
+                        .cursor_pointer()
+                        .hover(|s| s.opacity(0.9))
+                        .font_family(horizon_theme::glass::FONT)
+                        .text_size(px(15.))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(gpui::white())
+                        .child(tr("Play Offline")),
+                    &t,
+                )
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                    this.play_offline();
+                    cx.notify();
+                }));
+
+                Some(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(8.))
+                        .child(microsoft_button)
+                        .child(elyby_button)
+                        .child(offline_button)
+                        .into_any_element(),
+                )
+            },
         };
         let later = ui::button("owner-later".into(), tr("Not now").into(), Kind::Ghost, &t)
             .h(px(44.))

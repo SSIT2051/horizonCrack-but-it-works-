@@ -75,6 +75,30 @@ impl Endpoints {
     }
 }
 
+/// Ely.by OAuth2 endpoints.
+#[derive(Clone, Debug)]
+pub struct ElyByEndpoints {
+    /// The OAuth 2.0 authorization endpoint.
+    pub authorize: String,
+    /// The OAuth 2.0 token endpoint.
+    pub token: String,
+    /// The user info endpoint.
+    pub user_info: String,
+    /// The Minecraft authentication endpoint (Mojang-compatible).
+    pub minecraft_auth: String,
+}
+
+impl ElyByEndpoints {
+    pub fn live() -> Self {
+        Self {
+            authorize: "https://account.ely.by/api/oauth2/v1/authorize".into(),
+            token: "https://account.ely.by/api/oauth2/v1/token".into(),
+            user_info: "https://account.ely.by/api/account/v1/info".into(),
+            minecraft_auth: "https://authserver.ely.by/auth/authenticate".into(),
+        }
+    }
+}
+
 /// Orders resolved addresses so the two families alternate, the first one's address first (the
 /// order RFC 8305 asks a client to try them in). A host whose IPv6 route is dead then costs one
 /// short attempt before its IPv4 address is tried, instead of every AAAA record in turn.
@@ -328,6 +352,154 @@ fn refresh_ms(ep: &Endpoints, client_id: &str, refresh: &str) -> Result<MsTokens
     ms_tokens(status, &v)
 }
 
+// ----- Ely.by OAuth2 -------------------------------------------------------------------------------
+
+/// The OAuth2 tokens from Ely.by.
+pub struct ElyByTokens {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub expires_in: u64,
+}
+
+/// The authorization code received from Ely.by.
+pub struct ElyByAuthCode {
+    pub code: String,
+    pub state: String,
+}
+
+impl std::fmt::Debug for ElyByTokens {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ElyByTokens(<hidden>)")
+    }
+}
+
+/// Build the Ely.by authorization URL.
+pub fn elyby_authorize_url(ep: &ElyByEndpoints, client_id: &str, redirect_uri: &str, state: &str) -> String {
+    format!(
+        "{}?client_id={}&redirect_uri={}&scope=account_info%20minecraft_server_session%20offline_access&response_type=code&state={}",
+        ep.authorize, client_id, redirect_uri, state
+    )
+}
+
+/// Exchange the authorization code for tokens.
+pub fn elyby_exchange_code(
+    ep: &ElyByEndpoints,
+    client_id: &str,
+    client_secret: &str,
+    redirect_uri: &str,
+    code: &str,
+) -> Result<ElyByTokens, String> {
+    let (status, v) = send(
+        request_to("POST", &ep.token),
+        Some(Body::Form(vec![
+            ("grant_type", "authorization_code"),
+            ("client_id", client_id),
+            ("client_secret", client_secret),
+            ("redirect_uri", redirect_uri),
+            ("code", code),
+        ])),
+        "Ely.by",
+    )?;
+    match (
+        status,
+        str_field(&v, "access_token"),
+        str_field(&v, "refresh_token"),
+        v.get("expires_in").and_then(Value::as_u64),
+    ) {
+        (200, Some(access_token), Some(refresh_token), Some(expires_in)) => Ok(ElyByTokens {
+            access_token,
+            refresh_token,
+            expires_in,
+        }),
+        _ => Err(format!(
+            "Ely.by token exchange failed: {}",
+            v.get("error_description")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown error")
+        )),
+    }
+}
+
+/// Refresh the Ely.by access token.
+pub fn elyby_refresh_token(
+    ep: &ElyByEndpoints,
+    client_id: &str,
+    client_secret: &str,
+    refresh_token: &str,
+) -> Result<ElyByTokens, String> {
+    let (status, v) = send(
+        request_to("POST", &ep.token),
+        Some(Body::Form(vec![
+            ("grant_type", "refresh_token"),
+            ("client_id", client_id),
+            ("client_secret", client_secret),
+            ("refresh_token", refresh_token),
+        ])),
+        "Ely.by",
+    )?;
+    match (
+        status,
+        str_field(&v, "access_token"),
+        str_field(&v, "refresh_token"),
+        v.get("expires_in").and_then(Value::as_u64),
+    ) {
+        (200, Some(access_token), Some(refresh_token), Some(expires_in)) => Ok(ElyByTokens {
+            access_token,
+            refresh_token,
+            expires_in,
+        }),
+        _ => Err(format!(
+            "Ely.by token refresh failed: {}",
+            v.get("error_description")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown error")
+        )),
+    }
+}
+
+/// Get user info from Ely.by using the access token.
+pub fn elyby_user_info(
+    ep: &ElyByEndpoints,
+    access_token: &str,
+) -> Result<(String, String), String> {
+    let (status, v) = send(
+        bearer(request_to("GET", &ep.user_info), access_token),
+        None,
+        "Ely.by",
+    )?;
+    if status != 200 {
+        return Err("Ely.by user info request failed".into());
+    }
+    let username = str_field(&v, "username").ok_or("Ely.by response missing username")?;
+    let uuid = str_field(&v, "uuid").ok_or("Ely.by response missing uuid")?;
+    Ok((username, uuid.replace('-', "").to_lowercase()))
+}
+
+/// Authenticate with Ely.by's Minecraft-compatible auth endpoint to get a Minecraft access token.
+pub fn elyby_minecraft_auth(
+    ep: &ElyByEndpoints,
+    access_token: &str,
+) -> Result<(String, u64, Option<String>), String> {
+    let (status, v) = send(
+        request_to("POST", &ep.minecraft_auth),
+        Some(Body::Json(json!({
+            "username": access_token,
+            "password": "",
+        }))),
+        "Ely.by Minecraft auth",
+    )?;
+    if status != 200 {
+        return Err(format!(
+            "Ely.by Minecraft auth failed: {}",
+            v.get("error").and_then(Value::as_str).unwrap_or("unknown error")
+        ));
+    }
+    let access_token = str_field(&v, "access_token").ok_or("Ely.by auth missing access_token")?;
+    let expires_in = v.get("expires_in").and_then(Value::as_u64).unwrap_or(86400);
+    let xuid = str_field(&v, "xuid");
+    Ok((access_token, expires_in, xuid))
+}
+
 // ----- Xbox Live, XSTS, Minecraft ----------------------------------------------------------------
 
 /// The XSTS `XErr` codes, as the official launcher explains them.
@@ -467,12 +639,40 @@ fn owns_game(ep: &Endpoints, token: &str) -> Result<bool, String> {
         }))
 }
 
+/// Authentication provider for an account.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AuthProvider {
+    Microsoft,
+    ElyBy,
+    Offline,
+}
+
+impl Default for AuthProvider {
+    fn default() -> Self {
+        Self::Microsoft
+    }
+}
+
+impl std::fmt::Display for AuthProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Microsoft => write!(f, "Microsoft"),
+            Self::ElyBy => write!(f, "Ely.by"),
+            Self::Offline => write!(f, "Offline"),
+        }
+    }
+}
+
 /// A Minecraft profile, as the launcher shows and remembers it (no secrets).
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Account {
     /// The profile UUID without dashes.
     pub uuid: String,
     pub name: String,
+    /// The authentication provider this account uses.
+    #[serde(default)]
+    pub provider: AuthProvider,
     /// The active skin's URL (textures.minecraft.net) and model ("classic" or "slim").
     #[serde(default)]
     pub skin: Option<(String, String)>,
@@ -508,6 +708,7 @@ fn profile(ep: &Endpoints, token: &str) -> Result<Option<Account>, String> {
     Ok(Some(Account {
         uuid: uuid.replace('-', "").to_lowercase(),
         name,
+        provider: AuthProvider::Microsoft,
         skin: active("skins").and_then(|s| {
             Some((
                 str_field(&s, "url")?,
@@ -523,18 +724,27 @@ fn profile(ep: &Endpoints, token: &str) -> Result<Option<Account>, String> {
 /// What the keychain keeps for one account.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Secrets {
-    refresh_token: String,
+    /// The authentication provider this account uses.
     #[serde(default)]
-    sign_in_required: bool,
-    minecraft_token: String,
-    minecraft_expires_at: u64,
+    pub provider: AuthProvider,
+    /// Microsoft: the refresh token. Ely.by: the refresh token. Offline: unused.
     #[serde(default)]
-    xuid: Option<String>,
+    pub refresh_token: String,
+    #[serde(default)]
+    pub sign_in_required: bool,
+    /// Microsoft/Ely.by: the Minecraft access token. Offline: "0".
+    pub minecraft_token: String,
+    pub minecraft_expires_at: u64,
+    #[serde(default)]
+    pub xuid: Option<String>,
+    /// Ely.by: the client_id used. Microsoft: unused. Offline: unused.
+    #[serde(default)]
+    pub elyby_client_id: Option<String>,
     /// The last answer the Minecraft services gave: whether the account owns the game. It is
     /// kept here, beside the tokens, so that no plain file can say yes. Accounts saved before it
     /// existed passed the same check at sign-in, which refuses everyone else.
     #[serde(default = "owned_at_sign_in")]
-    owns: bool,
+    pub owns: bool,
 }
 fn owned_at_sign_in() -> bool {
     true
@@ -562,20 +772,97 @@ pub fn finish_sign_in_with_progress(
     }
     progress(session::Phase::Profile);
     let account = profile(ep, &mc.token)?.ok_or(NO_PROFILE)?;
-    Ok((account, Secrets::new(ms.refresh, mc)))
+    Ok((account, Secrets::new(AuthProvider::Microsoft, ms.refresh, mc)))
+}
+
+/// Complete Ely.by sign-in: get user info, then Minecraft access token.
+pub fn finish_elyby_sign_in(
+    elyby_ep: &ElyByEndpoints,
+    client_id: &str,
+    _client_secret: &str,
+    access_token: &str,
+    progress: &dyn Fn(session::Phase),
+) -> Result<(Account, Secrets), String> {
+    progress(session::Phase::ElyBy);
+    // Get user info from Ely.by
+    let (username, uuid) = elyby_user_info(elyby_ep, access_token)?;
+    progress(session::Phase::Ownership);
+    // Get Minecraft access token from Ely.by
+    let (mc_token, expires_in, xuid) = elyby_minecraft_auth(elyby_ep, access_token)?;
+    let mc_expires_at = now().saturating_add(expires_in.min(7 * 86_400));
+    progress(session::Phase::Profile);
+    
+    let account = Account {
+        uuid,
+        name: username,
+        provider: AuthProvider::ElyBy,
+        skin: None, // Ely.by has its own skin system; we'll fetch separately if needed
+        cape: None,
+    };
+    
+    let secrets = Secrets {
+        provider: AuthProvider::ElyBy,
+        refresh_token: String::new(), // Will be set by caller after token exchange
+        sign_in_required: false,
+        minecraft_token: mc_token,
+        minecraft_expires_at: mc_expires_at,
+        xuid,
+        elyby_client_id: Some(client_id.to_owned()),
+        owns: true,
+    };
+    
+    Ok((account, secrets))
 }
 
 impl Secrets {
-    fn new(refresh_token: String, mc: Minecraft) -> Self {
+    fn new(provider: AuthProvider, refresh_token: String, mc: Minecraft) -> Self {
         Self {
+            provider,
             refresh_token,
             sign_in_required: false,
             minecraft_token: mc.token,
             minecraft_expires_at: mc.expires_at,
             xuid: mc.xuid,
+            elyby_client_id: None,
             owns: true,
         }
     }
+}
+
+/// Create an offline account with the given name.
+/// Generates an offline UUID using Mojang's algorithm (UUID.nameUUIDFromBytes("OfflinePlayer:" + name)).
+pub fn create_offline_account(name: &str) -> Result<(Account, Secrets), String> {
+    if name.is_empty() || name.chars().count() > 16 {
+        return Err("Invalid player name: must be 1-16 characters".into());
+    }
+    // Validate player name characters (alphanumeric and underscore)
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err("Invalid player name: only alphanumeric characters and underscore allowed".into());
+    }
+    
+    let uuid = horizon_protocol::crypto::offline_uuid(name);
+    let uuid_string = horizon_protocol::crypto::uuid_string(uuid).replace('-', "").to_lowercase();
+    
+    let account = Account {
+        uuid: uuid_string,
+        name: name.to_owned(),
+        provider: AuthProvider::Offline,
+        skin: None,
+        cape: None,
+    };
+    
+    let secrets = Secrets {
+        provider: AuthProvider::Offline,
+        refresh_token: String::new(),
+        sign_in_required: false,
+        minecraft_token: "0".to_owned(), // Offline mode uses "0" as access token
+        minecraft_expires_at: u64::MAX,
+        xuid: None,
+        elyby_client_id: None,
+        owns: true,
+    };
+    
+    Ok((account, secrets))
 }
 
 /// What asking the Minecraft services again found for one account.
@@ -590,12 +877,19 @@ enum Check {
 
 /// Asks whether `account` owns the game, with a Minecraft token renewed through the refresh token
 /// first when it has less than an hour left. The secrets come back renewed whatever the answer.
-fn check(ep: &Endpoints, client_id: Option<&str>, account: &Account, secrets: Secrets) -> Check {
-    check_with(ep, client_id, account, secrets, false, &|_| {})
+fn check(
+    ep: &Endpoints,
+    elyby_ep: &ElyByEndpoints,
+    client_id: Option<&str>,
+    account: &Account,
+    secrets: Secrets,
+) -> Check {
+    check_with(ep, elyby_ep, client_id, account, secrets, false, &|_| {})
 }
 
 fn check_with(
     ep: &Endpoints,
+    elyby_ep: &ElyByEndpoints,
     client_id: Option<&str>,
     account: &Account,
     mut secrets: Secrets,
@@ -605,32 +899,86 @@ fn check_with(
     if secrets.sign_in_required {
         return Check::NoAnswer(SIGN_IN_AGAIN.into(), secrets);
     }
-    if force || secrets.minecraft_expires_at <= now() + RENEW_BEFORE {
-        progress(session::Phase::Microsoft);
-        let renewed = client_id
-            .ok_or_else(|| NOT_CONFIGURED.to_string())
-            .and_then(|id| refresh_ms(ep, id, &secrets.refresh_token));
-        let ms = match renewed {
-            Ok(ms) => ms,
-            Err(e) => {
-                secrets.sign_in_required = e == SIGN_IN_AGAIN;
-                return Check::NoAnswer(e, secrets);
-            }
-        };
-        // Microsoft can rotate its refresh credential even if a later service fails.
-        secrets.refresh_token = ms.refresh;
-        match minecraft_login(ep, &ms.access, progress) {
-            Ok(mc) => {
-                secrets = Secrets {
-                    owns: secrets.owns,
-                    ..Secrets::new(secrets.refresh_token, mc)
+
+    // Handle different providers
+    match secrets.provider {
+        AuthProvider::Microsoft => {
+            if force || secrets.minecraft_expires_at <= now() + RENEW_BEFORE {
+                progress(session::Phase::Microsoft);
+                let renewed = client_id
+                    .ok_or_else(|| NOT_CONFIGURED.to_string())
+                    .and_then(|id| refresh_ms(ep, id, &secrets.refresh_token));
+                let ms = match renewed {
+                    Ok(ms) => ms,
+                    Err(e) => {
+                        secrets.sign_in_required = e == SIGN_IN_AGAIN;
+                        return Check::NoAnswer(e, secrets);
+                    }
+                };
+                // Microsoft can rotate its refresh credential even if a later service fails.
+                secrets.refresh_token = ms.refresh;
+                match minecraft_login(ep, &ms.access, progress) {
+                    Ok(mc) => {
+                        let provider = secrets.provider.clone();
+                        secrets = Secrets {
+                            owns: secrets.owns,
+                            ..Secrets::new(provider, secrets.refresh_token, mc)
+                        }
+                    }
+                    Err(e) => return Check::NoAnswer(e, secrets),
                 }
             }
-            Err(e) => return Check::NoAnswer(e, secrets),
+        }
+        AuthProvider::ElyBy => {
+            if force || secrets.minecraft_expires_at <= now() + RENEW_BEFORE {
+                progress(session::Phase::ElyBy);
+                let client_id = secrets.elyby_client_id.as_deref().unwrap_or("horizon-launcher");
+                let client_secret = match std::env::var("HORIZON_ELYBY_CLIENT_SECRET") {
+                    Ok(s) if !s.is_empty() => s,
+                    _ => return Check::NoAnswer("Ely.by client secret not configured (HORIZON_ELYBY_CLIENT_SECRET)".into(), secrets),
+                };
+                let renewed = elyby_refresh_token(elyby_ep, client_id, &client_secret, &secrets.refresh_token);
+                let tokens = match renewed {
+                    Ok(tokens) => tokens,
+                    Err(e) => {
+                        secrets.sign_in_required = true;
+                        return Check::NoAnswer(e, secrets);
+                    }
+                };
+                // Get new Minecraft access token
+                let (mc_token, expires_in, xuid) = match elyby_minecraft_auth(elyby_ep, &tokens.access_token) {
+                    Ok((token, expires, xuid)) => (token, expires, xuid),
+                    Err(e) => return Check::NoAnswer(e, secrets),
+                };
+                secrets.refresh_token = tokens.refresh_token;
+                let mc_expires_at = now().saturating_add(expires_in.min(7 * 86_400));
+                secrets = Secrets {
+                    provider: AuthProvider::ElyBy,
+                    refresh_token: secrets.refresh_token,
+                    sign_in_required: false,
+                    minecraft_token: mc_token,
+                    minecraft_expires_at: mc_expires_at,
+                    xuid,
+                    elyby_client_id: secrets.elyby_client_id,
+                    owns: secrets.owns,
+                };
+            }
+        }
+        AuthProvider::Offline => {
+            // Offline accounts don't need renewal - they always "own" the game
+            secrets.minecraft_expires_at = u64::MAX;
+            secrets.owns = true;
         }
     }
+
     let token = &secrets.minecraft_token;
     progress(session::Phase::Ownership);
+
+    // For offline accounts, always return Owns
+    if secrets.provider == AuthProvider::Offline {
+        return Check::Owns(account.clone(), secrets);
+    }
+
     match owns_game(ep, token).and_then(|owns| {
         if !owns {
             return Ok(None);
@@ -2010,7 +2358,7 @@ pub fn launch(
         };
         let before = serde_json::to_string(&secrets).ok();
         let checked = match &operation {
-            Ok(_) => check(ep, client_id, &account, secrets),
+            Ok(_) => check(ep, &ElyByEndpoints::live(), client_id, &account, secrets),
             Err(e) => Check::NoAnswer(e.clone(), secrets),
         };
         let (said, secrets) = match checked {
@@ -2059,6 +2407,7 @@ pub fn launch(
 /// The owner gate before the game starts: [`launch`], where the account that plays (the selected
 /// one, else the first) must own the game itself, by the services' answer or, when they can't be
 /// asked, its last one. Never another account's ownership for a name of its own.
+/// Offline accounts are always allowed to play.
 pub fn launch_for_game(
     ep: &Endpoints,
     client_id: Option<&str>,
@@ -2069,11 +2418,19 @@ pub fn launch_for_game(
         accounts.selected = accounts.accounts.first().map(|a| a.uuid.clone());
     }
     let pass = launch(ep, client_id, store, accounts)?;
+    
+    // Check if the selected account is an offline account (always allowed)
+    let is_offline = accounts
+        .selected()
+        .and_then(|a| secrets_in(store, &a.uuid))
+        .is_some_and(|s| s.provider == AuthProvider::Offline);
+    
     let owns = accounts
         .selected()
         .and_then(|a| secrets_in(store, &a.uuid))
         .is_some_and(|s| s.owns);
-    if owns {
+    
+    if owns || is_offline {
         Ok(pass)
     } else {
         // Why that account can't play (it doesn't own the game, signed out, an unread keyring).
@@ -2120,11 +2477,16 @@ pub fn write_session_file(
     #[cfg(unix)]
     std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
     let mut file = options.open(&path).map_err(|e| e.to_string())?;
+    let user_type = match secrets.provider {
+        AuthProvider::Microsoft => "msa",
+        AuthProvider::ElyBy => "elyby",
+        AuthProvider::Offline => "offline",
+    };
     let body = json!({
         "name": account.name,
         "uuid": account.uuid,
         "access_token": secrets.minecraft_token,
-        "user_type": "msa",
+        "user_type": user_type,
         "xuid": secrets.xuid,
     });
     std::io::Write::write_all(&mut file, body.to_string().as_bytes()).map_err(|e| e.to_string())?;
@@ -2495,7 +2857,7 @@ fn account_sessions_until(
             true => (Some(account), secrets),
             // Out of time: its token while it holds, else Sign in again.
             false if late => (holds(&secrets, 60).then_some(account), secrets),
-            false => match check(ep, client_id, &account, secrets) {
+            false => match check(ep, &ElyByEndpoints::live(), client_id, &account, secrets) {
                 Check::Owns(renewed, secrets) => {
                     accounts.update(renewed.clone());
                     (Some(renewed), secrets)

@@ -2791,6 +2791,7 @@ dependencies = [
  "horizon-mods",
  "horizon-platform",
  "horizon-port-pack",
+ "horizon-protocol",
  "horizon-release-sign",
  "horizon-shader-api",
  "horizon-telemetry",

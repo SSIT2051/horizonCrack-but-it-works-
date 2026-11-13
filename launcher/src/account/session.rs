@@ -12,6 +12,7 @@ pub enum Phase {
     Queued,
     Keychain,
     Microsoft,
+    ElyBy,
     Xbox,
     Minecraft,
     Ownership,
@@ -26,6 +27,7 @@ impl Phase {
             Self::Queued => "Waiting for account access…",
             Self::Keychain => "Reading keychain…",
             Self::Microsoft => "Renewing Microsoft sign-in…",
+            Self::ElyBy => "Renewing Ely.by sign-in…",
             Self::Xbox => "Signing in to Xbox Live…",
             Self::Minecraft => "Getting Minecraft session…",
             Self::Ownership => "Checking Minecraft ownership…",
@@ -84,6 +86,7 @@ impl Status {
             None => State::SignInRequired,
             Some(s) if s.sign_in_required => State::SignInRequired,
             Some(s) if !s.owns => State::OwnershipRequired,
+            Some(s) if s.provider == AuthProvider::Offline => State::Ready,
             Some(s) if s.minecraft_expires_at <= now() + RENEW_BEFORE => State::NeedsRefresh,
             Some(_) => State::Ready,
         };
@@ -277,7 +280,7 @@ pub(super) fn refresh_account(
         let before =
             serde_json::to_string(&secrets).map_err(|_| "Could not read the saved sign-in.")?;
         let (mut status, secrets) =
-            match check_with(ep, client_id, account, secrets, true, progress) {
+            match check_with(ep, &ElyByEndpoints::live(), client_id, account, secrets, true, progress) {
                 Check::Owns(renewed, s) => {
                     // A new name or skin goes to accounts.json, as launch() saves it, so the
                     // row and its profile head follow the refresh, not the next Play.

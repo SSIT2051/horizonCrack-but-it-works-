@@ -53,7 +53,7 @@ impl AuthSession {
     pub fn access_token(&self) -> &str {
         &self.access_token
     }
-    /// The session file's JSON: {"name", "uuid", "access_token", "user_type": "msa", "xuid"}.
+    /// The session file's JSON: {"name", "uuid", "access_token", "user_type": "msa"|"elyby"|"offline", "xuid"}.
     pub fn parse(text: &str) -> Result<Self, String> {
         let v: serde_json::Value =
             serde_json::from_str(text).map_err(|_| "the session is not valid JSON")?;
@@ -68,8 +68,10 @@ impl AuthSession {
         let access_token = field("access_token")
             .filter(|t| !t.is_empty())
             .ok_or("the session has no access token")?;
-        if field("user_type").is_some_and(|t| t != "msa") {
-            return Err("the session is not a Microsoft account session".into());
+        let user_type = field("user_type").unwrap_or("msa");
+        match user_type {
+            "msa" | "elyby" | "offline" | "legacy" => {},
+            other => return Err(format!("unsupported user_type: {other}")),
         }
         Ok(Self {
             name: name.to_owned(),
@@ -765,7 +767,12 @@ mod tests {
             .is_err()
         );
         assert!(AuthSession::parse(r#"{"name":"A","uuid":"nope","access_token":"t"}"#).is_err());
-        assert!(AuthSession::parse(r#"{"name":"A","uuid":"069a79f444e94726a5befca90e38aaf5","access_token":"t","user_type":"legacy"}"#).is_err());
+        assert!(AuthSession::parse(r#"{"name":"A","uuid":"069a79f444e94726a5befca90e38aaf5","access_token":"t","user_type":"legacy"}"#).is_ok());
+        // Test new user_type values
+        assert!(AuthSession::parse(r#"{"name":"A","uuid":"069a79f444e94726a5befca90e38aaf5","access_token":"0","user_type":"offline"}"#).is_ok());
+        assert!(AuthSession::parse(r#"{"name":"A","uuid":"069a79f444e94726a5befca90e38aaf5","access_token":"token","user_type":"elyby"}"#).is_ok());
+        // Invalid user_type should still fail
+        assert!(AuthSession::parse(r#"{"name":"A","uuid":"069a79f444e94726a5befca90e38aaf5","access_token":"t","user_type":"invalid"}"#).is_err());
         let s = AuthSession::parse(r#"{"name":"A","uuid":"069a79f444e94726a5befca90e38aaf5","access_token":"t","xuid":"25"}"#).unwrap();
         assert_eq!(s.xuid.as_deref(), Some("25"));
     }

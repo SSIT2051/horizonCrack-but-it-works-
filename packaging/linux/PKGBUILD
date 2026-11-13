@@ -1,0 +1,81 @@
+# Maintainer: Horizon Contributors <https://github.com/SSIT2051/horizonCrack-but-it-works->
+pkgname=horizon-launcher
+pkgver=0.2.0
+pkgrel=1
+pkgdesc="Minecraft: Java Edition launcher rewritten in Rust (wgpu)"
+arch=('x86_64' 'aarch64')
+url="https://github.com/SSIT2051/horizonCrack-but-it-works-"
+license=('MIT')
+depends=(
+    'glibc'           # or 'musl' for musl build
+    'libxkbcommon'    # keyboard handling
+    'libx11'          # X11 support
+    'libxcb'          # XCB support
+    'wayland'         # Wayland support
+    'libvulkan.so'    # Vulkan loader
+    'libglvnd'        # OpenGL
+    'libasound.so'    # ALSA audio
+    'libudev.so'      # udev
+    'libdbus-1.so'    # D-Bus
+    'hicolor-icon-theme'
+    'desktop-file-utils'
+)
+makedepends=('cargo' 'rust' 'git')
+optdepends=(
+    'libsecret: keychain support'
+    'gtk3: file dialogs on GTK desktops'
+    'libayatana-appindicator: tray icon support'
+)
+provides=('horizon-launcher')
+conflicts=('horizon-launcher-git')
+source=("${pkgname}-${pkgver}.tar.gz::https://github.com/SSIT2051/horizonCrack-but-it-works-/releases/download/v${pkgver}/horizon-linux-x86_64.tar.gz"
+        "horizon-launcher.desktop"
+        "horizon.png")
+sha256sums=('SKIP'
+            'SKIP'
+            'SKIP')
+
+prepare() {
+    cd "${srcdir}"
+    # Extract if it's a tarball with subdirectory
+    if [[ -d "horizon-linux-x86_64" ]]; then
+        cd "horizon-linux-x86_64"
+    fi
+}
+
+package() {
+    cd "${srcdir}"
+    if [[ -d "horizon-linux-x86_64" ]]; then
+        cd "horizon-linux-x86_64"
+    fi
+    
+    # Install binary
+    install -Dm755 "horizon-launcher" "${pkgdir}/usr/bin/horizon-launcher"
+    
+    # Install desktop entry
+    install -Dm644 "${srcdir}/horizon-launcher.desktop" \
+        "${pkgdir}/usr/share/applications/horizon-launcher.desktop"
+    
+    # Install icons
+    install -Dm644 "${srcdir}/horizon.png" \
+        "${pkgdir}/usr/share/icons/hicolor/256x256/apps/horizon.png"
+    
+    # Install license
+    if [[ -f "LICENSE" ]]; then
+        install -Dm644 "LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+    elif [[ -f "LICENSE-MIT" ]]; then
+        install -Dm644 "LICENSE-MIT" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+    fi
+}
+
+# For building from source (alternative to downloading binary)
+# build() {
+#     cd "${srcdir}/${pkgname}-${pkgver}"
+#     cargo build --release --locked -p horizon-official --bin horizon-official
+# }
+#
+# package() {
+#     cd "${srcdir}/${pkgname}-${pkgver}"
+#     install -Dm755 "target/release/horizon-official" "${pkgdir}/usr/bin/horizon-launcher"
+#     ...
+# }

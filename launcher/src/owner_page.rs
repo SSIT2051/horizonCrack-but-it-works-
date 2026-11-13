@@ -262,7 +262,7 @@ impl Launcher {
             .child(card)
     }
 
-/// The screen in the glass look: a dialog plate over the dimmed, blurred launcher (the
+    /// The screen in the glass look: a dialog plate over the dimmed, blurred launcher (the
     /// mockup's modals), its Sign in the Account card's white Microsoft button, its code in the
     /// card's inner panel.
     fn glass_owner_screen(
@@ -522,7 +522,7 @@ impl Launcher {
                         .child(offline_button)
                         .into_any_element(),
                 )
-            },
+            }
         };
         let later = ui::button("owner-later".into(), tr("Not now").into(), Kind::Ghost, &t)
             .h(px(44.))

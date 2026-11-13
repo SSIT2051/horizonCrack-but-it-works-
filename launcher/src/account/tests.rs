@@ -364,8 +364,13 @@ fn refresh_only_when_the_token_runs_out() {
         minecraft_expires_at: now() + 60,
         ..kept.clone()
     };
-    let Check::Owns(renewed_account, renewed) = check(&ep, &ElyByEndpoints::live(), Some("test-client"), &notch(), stale)
-    else {
+    let Check::Owns(renewed_account, renewed) = check(
+        &ep,
+        &ElyByEndpoints::live(),
+        Some("test-client"),
+        &notch(),
+        stale,
+    ) else {
         panic!("owns");
     };
     assert_eq!(

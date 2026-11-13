@@ -2030,7 +2030,9 @@ impl Launcher {
         self.sign_in_state = Some(SignInState::Starting);
         // TODO: Implement Ely.by OAuth2 flow
         // For now, show a message that it's not yet implemented
-        self.sign_in_state = Some(SignInState::Done(Err("Ely.by sign-in not yet implemented".into())));
+        self.sign_in_state = Some(SignInState::Done(Err(
+            "Ely.by sign-in not yet implemented".into()
+        )));
     }
 
     /// Play offline without any account.
@@ -2071,10 +2073,10 @@ impl Launcher {
     /// Create an offline account and start the game with it.
     fn create_offline_account_and_play(&mut self) {
         use crate::account::{create_offline_account, store, Accounts};
-        
+
         // Prompt for a name (for now use a default)
         let name = "Player".to_string();
-        
+
         match create_offline_account(&name) {
             Ok((account, secrets)) => {
                 // Save to accounts.json
@@ -2088,13 +2090,13 @@ impl Launcher {
                     return;
                 }
                 self.accounts = accounts;
-                
+
                 // Set as selected and start the game
                 if let Err(e) = self.accounts.play_as(&account.uuid) {
                     self.client_error = Some(e);
                     return;
                 }
-                
+
                 // Trigger a play
                 self.owner = Some(true);
                 self.owner_screen_open = false;

@@ -279,32 +279,39 @@ pub(super) fn refresh_account(
         };
         let before =
             serde_json::to_string(&secrets).map_err(|_| "Could not read the saved sign-in.")?;
-        let (mut status, secrets) =
-            match check_with(ep, &ElyByEndpoints::live(), client_id, account, secrets, true, progress) {
-                Check::Owns(renewed, s) => {
-                    // A new name or skin goes to accounts.json, as launch() saves it, so the
-                    // row and its profile head follow the refresh, not the next Play.
-                    let mut saved = Accounts::load_from(accounts);
-                    if saved
-                        .accounts
-                        .iter()
-                        .any(|a| a.uuid == renewed.uuid && *a != renewed)
-                    {
-                        saved.update(renewed);
-                        let _ = saved.save_to(accounts);
-                    }
-                    (Status::from_secrets(Some(&s)), s)
+        let (mut status, secrets) = match check_with(
+            ep,
+            &ElyByEndpoints::live(),
+            client_id,
+            account,
+            secrets,
+            true,
+            progress,
+        ) {
+            Check::Owns(renewed, s) => {
+                // A new name or skin goes to accounts.json, as launch() saves it, so the
+                // row and its profile head follow the refresh, not the next Play.
+                let mut saved = Accounts::load_from(accounts);
+                if saved
+                    .accounts
+                    .iter()
+                    .any(|a| a.uuid == renewed.uuid && *a != renewed)
+                {
+                    saved.update(renewed);
+                    let _ = saved.save_to(accounts);
                 }
-                Check::DoesNot(s) => (Status::from_secrets(Some(&s)), s),
-                Check::NoAnswer(e, s) => {
-                    let mut status = Status::from_secrets(Some(&s));
-                    if !s.sign_in_required {
-                        status.state = State::Retry;
-                    }
-                    status.message = e;
-                    (status, s)
+                (Status::from_secrets(Some(&s)), s)
+            }
+            Check::DoesNot(s) => (Status::from_secrets(Some(&s)), s),
+            Check::NoAnswer(e, s) => {
+                let mut status = Status::from_secrets(Some(&s));
+                if !s.sign_in_required {
+                    status.state = State::Retry;
                 }
-            };
+                status.message = e;
+                (status, s)
+            }
+        };
         let after =
             serde_json::to_string(&secrets).map_err(|_| "Could not save the renewed sign-in.")?;
         if before != after {

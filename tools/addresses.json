@@ -116,6 +116,8 @@
     "launcher/src/tailscale.rs api.tailscale.com",
     "launcher/src/tailscale.rs login.tailscale.com",
     "launcher/src/tailscale.rs tailscale.com",
-    "launcher/src/wardrobe.rs playhorizon.dev"
+    "launcher/src/wardrobe.rs playhorizon.dev",
+    "launcher/src/account.rs account.ely.by",
+    "launcher/src/account.rs authserver.ely.by"
   ]
 }

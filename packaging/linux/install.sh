@@ -32,56 +32,109 @@ detect_arch() {
     esac
 }
 
-detect_libc() {
-    if ldd --version 2>&1 | grep -q musl; then
-        echo "musl"
-    else
-        echo "gnu"
-    fi
-}
-
-get_latest_release() {
-    local url="https://api.github.com/repos/${REPO}/releases/latest"
+# Get the latest launcher release (not game release)
+# Launcher releases are tagged as launcher@X.Y.Z or launcher-vX.Y.Z
+get_latest_launcher_release() {
+    local url="https://api.github.com/repos/${REPO}/releases"
+    local releases_json
+    
     if command -v curl >/dev/null; then
-        curl -fsSL "$url" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/'
+        releases_json=$(curl -fsSL "$url?per_page=100")
     elif command -v wget >/dev/null; then
-        wget -qO- "$url" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/'
+        releases_json=$(wget -qO- "$url?per_page=100")
     else
         error "curl or wget required"
         exit 1
     fi
+    
+    # Find the latest non-draft, non-prerelease launcher release
+    # Launcher tags start with "launcher@" or "launcher-v"
+    echo "$releases_json" | grep -E '"tag_name":\s*"launcher[@v]' | head -1 | sed -E 's/.*"([^"]+)".*/\1/'
+}
+
+# Alternative: get latest release by checking tag names
+get_latest_launcher_release_v2() {
+    local url="https://api.github.com/repos/${REPO}/releases/latest"
+    local tag_name
+    
+    if command -v curl >/dev/null; then
+        tag_name=$(curl -fsSL "$url" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+    elif command -v wget >/dev/null; then
+        tag_name=$(wget -qO- "$url" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+    else
+        error "curl or wget required"
+        exit 1
+    fi
+    
+    # If the latest release is a launcher release, use it
+    if [[ "$tag_name" =~ ^launcher[@v] ]]; then
+        echo "$tag_name"
+        return
+    fi
+    
+    # Otherwise, search through releases for the latest launcher release
+    local releases_url="https://api.github.com/repos/${REPO}/releases?per_page=100"
+    local releases_json
+    
+    if command -v curl >/dev/null; then
+        releases_json=$(curl -fsSL "$releases_url")
+    elif command -v wget >/dev/null; then
+        releases_json=$(wget -qO- "$releases_url")
+    else
+        error "curl or wget required"
+        exit 1
+    fi
+    
+    # Find first launcher release (they're ordered by creation date, newest first)
+    echo "$releases_json" | grep -E '"tag_name":\s*"launcher[@v]' | head -1 | sed -E 's/.*"([^"]+)".*/\1/'
 }
 
 download_and_install() {
     local version="$1"
     local arch="$(detect_arch)"
-    local libc="$(detect_libc)"
     
-    local asset_name
-    if [[ "$libc" == "musl" ]]; then
-        asset_name="horizon-linux-musl-${arch}.tar.gz"
-    else
-        asset_name="horizon-linux-${arch}.tar.gz"
-    fi
+    # Launcher assets are named differently from game assets
+    # Linux: horizon-launcher-linux-x86_64.tar.gz or horizon-launcher-linux-x86_64.AppImage
+    # For musl, there's no separate launcher build yet
+    local asset_name_tar="horizon-launcher-linux-${arch}.tar.gz"
+    local asset_name_appimage="horizon-launcher-linux-${arch}.AppImage"
     
-    local download_url="https://github.com/${REPO}/releases/download/${version}/${asset_name}"
+    local download_url_tar="https://github.com/${REPO}/releases/download/${version}/${asset_name_tar}"
+    local download_url_appimage="https://github.com/${REPO}/releases/download/${version}/${asset_name_appimage}"
     local tmpdir="$(mktemp -d)"
     trap 'rm -rf "$tmpdir"' EXIT
     
-    log "Downloading ${asset_name}..."
-    if ! curl -fsSL -o "${tmpdir}/${asset_name}" "$download_url"; then
-        error "Failed to download ${asset_name}"
-        error "URL: ${download_url}"
-        exit 1
+    # Try tar.gz first, then AppImage
+    local asset_name=""
+    local download_url=""
+    local binary_path=""
+    
+    log "Downloading ${asset_name_tar}..."
+    if curl -fsSL -o "${tmpdir}/${asset_name_tar}" "$download_url_tar" 2>/dev/null; then
+        asset_name="$asset_name_tar"
+        download_url="$download_url_tar"
+        log "Extracting..."
+        tar -xzf "${tmpdir}/${asset_name_tar}" -C "$tmpdir"
+        
+        # Find the binary (could be in a subdirectory)
+        binary_path=$(find "$tmpdir" -name "$BINARY_NAME" -type f | head -1)
+    else
+        log "${asset_name_tar} not found, trying AppImage..."
+        if curl -fsSL -o "${tmpdir}/${asset_name_appimage}" "$download_url_appimage" 2>/dev/null; then
+            asset_name="$asset_name_appimage"
+            download_url="$download_url_appimage"
+            chmod +x "${tmpdir}/${asset_name_appimage}"
+            binary_path="${tmpdir}/${asset_name_appimage}"
+        else
+            error "Failed to download launcher assets"
+            error "Tried: ${download_url_tar}"
+            error "Tried: ${download_url_appimage}"
+            error "Version: ${version}"
+            exit 1
+        fi
     fi
     
-    log "Extracting..."
-    tar -xzf "${tmpdir}/${asset_name}" -C "$tmpdir"
-    
-    # Find the binary (could be in a subdirectory)
-    local binary_path
-    binary_path=$(find "$tmpdir" -name "$BINARY_NAME" -type f | head -1)
-    if [[ -z "$binary_path" ]]; then
+    if [[ -z "$binary_path" ]] || [[ ! -f "$binary_path" ]]; then
         error "Binary not found in archive"
         exit 1
     fi
@@ -113,6 +166,15 @@ EOF
     icon_path=$(find "$tmpdir" -name "horizon.png" -type f | head -1)
     if [[ -n "$icon_path" ]]; then
         cp "$icon_path" "${ICON_DIR}/horizon.png"
+    else
+        # Try to extract icon from AppImage if we have one
+        if [[ "$asset_name" == *.AppImage ]]; then
+            cd "$tmpdir"
+            ./"$asset_name_appimage" --appimage-extract horizon.png 2>/dev/null || true
+            if [[ -f "squashfs-root/horizon.png" ]]; then
+                cp "squashfs-root/horizon.png" "${ICON_DIR}/horizon.png"
+            fi
+        fi
     fi
     
     # Update desktop database
@@ -147,16 +209,17 @@ main() {
     echo "╚══════════════════════════════════════╝"
     echo
     
-    log "Fetching latest release..."
+    log "Fetching latest launcher release..."
     local version
-    version=$(get_latest_release)
+    version=$(get_latest_launcher_release_v2)
     
     if [[ -z "$version" ]]; then
-        error "Could not determine latest release"
+        error "Could not determine latest launcher release"
+        error "Check https://github.com/${REPO}/releases for launcher releases"
         exit 1
     fi
     
-    log "Latest version: ${version}"
+    log "Latest launcher version: ${version}"
     download_and_install "$version"
 }
 

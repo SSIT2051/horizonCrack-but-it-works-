@@ -50,7 +50,7 @@ class ReadmeTests(unittest.TestCase):
         badge = pg.BADGE.search(text)
         self.assertIsNotNone(badge, "the README's gap badge is missing")
         self.assertEqual(int(badge.group(2)), total, "the gap badge must match the block")
-        status = text.split("## Project status", 1)[1]
+        status = re.split(r"## Project status", text, flags=re.IGNORECASE)[1]
         self.assertTrue(status.lstrip().startswith("**Player-visible gaps:"), "the gaps come first under Project status")
         self.assertNotIn("<!--", status.split("###", 1)[0], "the website prints HTML comments of this intro")
         self.assertNotRegex(text, r"(?im)^#+ .*parity[^\n]*\d%", "no parity percentage heading (decided 2026-11-09)")

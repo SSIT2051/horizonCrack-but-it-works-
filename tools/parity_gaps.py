@@ -80,7 +80,8 @@ def rewrite(text: str, new_block: str, still: int) -> str:
     if LINE.search(text):
         text = LINE.sub(lambda _: new_block, text, count=1)
     else:
-        text = text.replace("## Project status\n\n", f"## Project status\n\n{new_block}\n\n", 1)
+        text = re.sub(r"## Project status\n\n", lambda _: f"## Project status\n\n{new_block}\n\n",
+                      text, count=1, flags=re.IGNORECASE)
     if BADGE.search(text):
         return BADGE.sub(lambda m: f"{m.group(1)}{still}{m.group(3)}", text)
     # No badge yet: it goes last in the badge row, the paragraph that closes just above the title.

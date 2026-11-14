@@ -156,6 +156,16 @@ Sign in with a Microsoft account in your browser (device code). Play needs one t
 
 MCP: `account_sign_in`.
 
+## `horizon-launcher account ely-by-exchange`
+
+Exchange an Ely.by authorization code for tokens and sign in.
+
+    horizon-launcher account ely-by-exchange <CODE>
+
+- `CODE`: The authorization code from the Ely.by redirect URL
+
+MCP: `account_ely_by_exchange`.
+
 ## `horizon-launcher account refresh`
 
 Renew an account's session now, even when its access token is still fresh.

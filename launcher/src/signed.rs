@@ -88,8 +88,9 @@ mod tests {
         let sums = sums_file(&[("horizon.zip".into(), sha256_hex(b"game"))]);
         let signature = key.sign("v2099.01.01", sums.as_bytes());
         // GitHub as it answers for a signed release (any tag: the files are what a replay would serve).
+        let base = format!("https://github.com/{REPO}/releases/download/");
         let signed = |url: &str| -> Result<Option<Vec<u8>>, String> {
-            assert!(url.starts_with("https://github.com/horizon-rust/horizon/releases/download/"));
+            assert!(url.starts_with(&base), "{url}");
             Ok(Some(
                 if url.ends_with(".sig") {
                     signature.clone()

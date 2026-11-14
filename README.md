@@ -3,16 +3,13 @@
 </p>
 
 <p align="center">
-  <a href="https://playhorizon.dev"><b>Website</b></a> ·
   <a href="#installation"><b>Installation</b></a> ·
-  <a href="https://playhorizon.dev/docs/"><b>Docs</b></a> ·
-  <a href="https://discord.gg/playhorizon"><b>Discord</b></a> ·
-  <a href="ROADMAP.md"><b>Roadmap</b></a> ·
-  <a href="#contributing"><b>Contributing</b></a>
+  <a href="https://github.com/SSIT2051/horizonCrack-but-it-works-/releases"><b>Releases</b></a> ·
+  <a href="#project-status"><b>Project Status</b></a>
   <a href="#project-status"><img src="https://img.shields.io/badge/player--visible%20gaps-0%20open-F0795A" alt="Player-visible gaps open"></a>
 </p>
 
-# Horizon
+# Horizon Launcher Fork
 
 **Minecraft: Java Edition 26.3, rewritten in Rust (wgpu).** Your worlds, the same rules and terrain as vanilla, checked by hundreds of differential tests. One native program — no Java required. Free, open source (MIT), unofficial: you play with your own copy of Java Edition.
 
@@ -20,9 +17,11 @@
   <img src="docs/media/readme/valley.webp" alt="A river valley with a plains village, savanna hills and a cherry grove, seen from above with a long view distance" width="100%">
 </p>
 
-## What is Horizon?
+> ⚠️ **Disclaimer:** This is an **unofficial fork** of the Horizon project. It is **not affiliated with, endorsed by, or associated with** the official Horizon launcher (playhorizon.dev), the Horizon Rust project, Mojang, or Microsoft. This is a community-maintained fork for personal use and experimentation.
 
-Horizon is a **complete rewrite of Minecraft: Java Edition in Rust**, targeting version 26.3. It uses the same world format, same generation, same rules — but runs natively with better performance, lower memory, and no Java dependency.
+## What is this fork?
+
+This is a **customized fork of Horizon** — a complete rewrite of Minecraft: Java Edition in Rust, targeting version 26.3. It uses the same world format, same generation, same rules — but runs natively with better performance, lower memory, and no Java dependency.
 
 **Main target:** Players who want vanilla Minecraft that runs faster, uses less RAM, and integrates with modern Linux/macOS/Windows without Java.
 
@@ -141,13 +140,6 @@ horizon-ctl break -1 65 -3           # mines; replies with drops
 
 [Agent control docs](docs/native-client.md#agent-control-horizon-ctl-and-mcp)
 
-## Contributing
-
-Issues/PRs welcome — read [CONTRIBUTING.md](CONTRIBUTING.md) (vanilla first, small PRs).  
-Before PR: `git config core.hooksPath .githooks && python3 tools/pr_ready.py`  
-Runs rustfmt, clippy, tests, vanilla harnesses, public-tree check.  
-Questions: [Discord](https://discord.gg/playhorizon)
-
 ## Project Status
 
 **Player-visible gaps: 0 open** of the 833 the [port ledger](tools/port_ledger.py) found, reading every vanilla 26.3 method against Horizon's code: vanilla behaviour a player would notice that Horizon doesn't have yet. By area: Animals [0](https://github.com/horizon-rust/horizon/issues/3512), Monsters and bosses [0](https://github.com/horizon-rust/horizon/issues/3513), Entities, projectiles, vehicles and decorations [0](https://github.com/horizon-rust/horizon/issues/3514), Items, enchantments and inventories [0](https://github.com/horizon-rust/horizon/issues/3515), Blocks, redstone and fluids [0](https://github.com/horizon-rust/horizon/issues/3516), World, world generation and saves [0](https://github.com/horizon-rust/horizon/issues/3517), Screens, HUD and client packets [0](https://github.com/horizon-rust/horizon/issues/3518), Entity and block rendering, models [0](https://github.com/horizon-rust/horizon/issues/3519), Server and players on the server [0](https://github.com/horizon-rust/horizon/issues/3520), Mob AI, villagers and raids [0](https://github.com/horizon-rust/horizon/issues/3521). This number goes down as gaps close (`tools/parity_gaps.py`); the table below says what the harnesses compare.
@@ -176,6 +168,8 @@ Scores: 0 (absent), 0.25 (started), 0.5 (playable, major features missing), 0.75
 ## Licence
 
 [MIT](LICENSE) for original work; deps keep their own ([notices](THIRD_PARTY_NOTICES.md)).  
-By [Ludovic Marie](https://lu4ovic.com) and [contributors](https://github.com/horizon-rust/horizon/graphs/contributors). Support: [GitHub Sponsors](https://github.com/sponsors/ludovic111).
+Based on Horizon by [Ludovic Marie](https://lu4ovic.com) and [contributors](https://github.com/horizon-rust/horizon/graphs/contributors). This fork maintained by [SSIT2051](https://github.com/SSIT2051).
 
 > **NOT AN OFFICIAL MINECRAFT PRODUCT.** Not approved by or associated with Mojang/Microsoft. Minecraft is a trademark of Mojang Synergies AB; its code/assets belong to Mojang/Microsoft under the [Minecraft EULA](https://www.minecraft.net/en-us/eula).
+>
+> **NOT AFFILIATED WITH THE OFFICIAL HORIZON PROJECT.** This is an unofficial community fork. The official Horizon launcher is at [playhorizon.dev](https://playhorizon.dev).

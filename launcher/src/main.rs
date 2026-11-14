@@ -2036,7 +2036,8 @@ impl Launcher {
             .unwrap_or_else(|_| "http://localhost:8080/callback".to_string());
 
         let elyby_ep = account::ElyByEndpoints::live();
-        let authorize_url = account::elyby_authorize_url(&elyby_ep, &client_id, &redirect_uri, "horizon-launcher");
+        let authorize_url =
+            account::elyby_authorize_url(&elyby_ep, &client_id, &redirect_uri, "horizon-launcher");
 
         // Open the authorization URL in the browser
         cx.open_url(&authorize_url);

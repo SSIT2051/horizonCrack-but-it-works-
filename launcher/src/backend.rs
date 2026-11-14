@@ -11,9 +11,11 @@ use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
 pub const REPO: &str = "SSIT2051/horizonCrack-but-it-works-";
-pub const README_URL: &str = "https://github.com/SSIT2051/horizonCrack-but-it-works-/blob/main/launcher/README.md";
+pub const README_URL: &str =
+    "https://github.com/SSIT2051/horizonCrack-but-it-works-/blob/main/launcher/README.md";
 /// The players' page on connecting an AI agent.
-pub const AGENT_DOCS_URL: &str = "https://github.com/SSIT2051/horizonCrack-but-it-works-/blob/main/docs/agent-control.md";
+pub const AGENT_DOCS_URL: &str =
+    "https://github.com/SSIT2051/horizonCrack-but-it-works-/blob/main/docs/agent-control.md";
 /// This launcher's version: the release workflow sets `HORIZON_LAUNCHER_VERSION` from the
 /// tag it builds (no version-bump commits); other builds say Cargo.toml's.
 pub const VERSION: &str = version_or(option_env!("HORIZON_LAUNCHER_VERSION"));
@@ -2118,9 +2120,8 @@ fn download_for_public(
         sources::Os::Windows => "windows",
     };
     log(format!("Downloading Minecraft {v} from Mojang (public)"));
-    mojang::download(pins, dir, os, 8, fetch, &mojang::CANCEL, log).map_err(|e| {
-        format!("\n  • Horizon tried to download {v} from Mojang, but: {e}")
-    })
+    mojang::download(pins, dir, os, 8, fetch, &mojang::CANCEL, log)
+        .map_err(|e| format!("\n  • Horizon tried to download {v} from Mojang, but: {e}"))
 }
 
 /// Downloads the pinned version from Mojang into `dir` when an account in the launcher owns
@@ -2497,7 +2498,7 @@ pub fn preparer(
                 .map_err(|e| e.to_string())?;
             Ok(body)
         };
-let linked = data_dir().join("linked-minecraft");
+        let linked = data_dir().join("linked-minecraft");
         if from == MinecraftFrom::Mojang {
             // Straight from Mojang (what is already there and whole is kept), for an owner only.
             download_for_owner(&pins, &own, &fetch, log)

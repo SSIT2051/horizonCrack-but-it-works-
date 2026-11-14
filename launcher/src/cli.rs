@@ -2023,9 +2023,16 @@ fn account_command(action: AccountCmd, as_json: bool) -> Result<(), String> {
             let redirect_uri = std::env::var("HORIZON_ELYBY_REDIRECT_URI")
                 .unwrap_or_else(|_| "http://localhost:8080/callback".to_string());
             let elyby_ep = account::ElyByEndpoints::live();
-            let tokens = account::elyby_exchange_code(&elyby_ep, &client_id, &client_secret, &redirect_uri, &code)?;
+            let tokens = account::elyby_exchange_code(
+                &elyby_ep,
+                &client_id,
+                &client_secret,
+                &redirect_uri,
+                &code,
+            )?;
             let (username, uuid) = account::elyby_user_info(&elyby_ep, &tokens.access_token)?;
-            let (mc_token, expires_in, xuid) = account::elyby_minecraft_auth(&elyby_ep, &tokens.access_token)?;
+            let (mc_token, expires_in, xuid) =
+                account::elyby_minecraft_auth(&elyby_ep, &tokens.access_token)?;
 
             let account = account::Account {
                 uuid: uuid.replace('-', "").to_lowercase(),

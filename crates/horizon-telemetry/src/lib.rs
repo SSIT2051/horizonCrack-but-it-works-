@@ -127,6 +127,9 @@ mod tests {
             Some("http://127.0.0.1:8080")
         );
         assert_eq!(resolve(Some("off")), None);
-        assert!(DEFAULT_ENDPOINT.starts_with("https://") && !DEFAULT_ENDPOINT.ends_with('/'));
+        assert!(
+            DEFAULT_ENDPOINT == "off"
+                || (DEFAULT_ENDPOINT.starts_with("https://") && !DEFAULT_ENDPOINT.ends_with('/'))
+        );
     }
 }

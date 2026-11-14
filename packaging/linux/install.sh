@@ -101,7 +101,8 @@ download_and_install() {
     
     local download_url_tar="https://github.com/${REPO}/releases/download/${version}/${asset_name_tar}"
     local download_url_appimage="https://github.com/${REPO}/releases/download/${version}/${asset_name_appimage}"
-    local tmpdir="$(mktemp -d)"
+    # tmpdir must not be local so the EXIT trap can access it after function returns
+    tmpdir="$(mktemp -d)"
     trap 'rm -rf "$tmpdir"' EXIT
     
     # Try tar.gz first, then AppImage

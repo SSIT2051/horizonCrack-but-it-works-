@@ -88,6 +88,9 @@ jobs:
           HEAD_SHA: ${{ (github.event_name == 'push' || steps.mode.outputs.dry_run == 'true') && github.sha || '' }}
           FORCE: ${{ inputs.force && 'yes' || '' }}
         run: |
+          # The pipe must not hide a decision that died: a green decide that wrote nothing skips the build and
+          # the release, and says the run is a success.
+          set -o pipefail
           python3 tools/release_train.py decide --kind launcher ${HEAD_SHA:+--head "$HEAD_SHA"} ${FORCE:+--force} | tee decision.json
           echo "### $(jq -r '.reason' decision.json)" >> "$GITHUB_STEP_SUMMARY"
           tag=$(jq -r '.tag' decision.json)

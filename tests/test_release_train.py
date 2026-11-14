@@ -152,23 +152,43 @@ class ReleaseTrainTests(unittest.TestCase):
     def test_pull_requests_are_fetched_in_batches(self):
         queries = []
 
-        def gh_json(*arguments):
-            query = arguments[-1]
+        def gh_graphql(query):
             queries.append(query)
             numbers = [int(n) for n in re.findall(r"pullRequest\(number: (\d+)\)", query)]
-            return {"data": {"repository": {f"p{n}": {
+            return {"repository": {f"p{n}": {
                 "number": n, "title": f" PR {n} ", "url": f"u/{n}", "mergedAt": "2026-11-12T10:00:00Z",
                 "author": {"login": "a"}, "labels": {"nodes": [{"name": "feature"}]},
-                "closingIssuesReferences": {"nodes": [{"number": n + 1}]}} for n in numbers}}}
+                "closingIssuesReferences": {"nodes": [{"number": n + 1}]}} for n in numbers}}
 
         numbers = list(range(1, 121)) + [5]
-        with mock.patch.object(train, "gh_json", gh_json):
+        with mock.patch.object(train, "gh_graphql", gh_graphql):
             prs = train.pull_requests(numbers)
         self.assertEqual(len(queries), 3, "120 distinct pull requests take three queries, not one call each")
         self.assertEqual([pr["number"] for pr in prs], numbers)
         self.assertEqual(prs[0]["title"], "PR 1")
         self.assertEqual((prs[0]["labels"], prs[0]["issues"], prs[0]["author"]), (["feature"], [2], "a"))
         self.assertEqual(prs[0]["merged_at"].isoformat(), "2026-11-12T10:00:00+00:00")
+
+    def test_pull_requests_this_repository_does_not_have_are_left_out(self):
+        # A repository that imported another's history names its pull requests in its merge commits, and has none
+        # of them: nothing can be read of such a merge, and the whole lookup must not stop for it.
+        def gh_graphql(query):
+            numbers = [int(n) for n in re.findall(r"pullRequest\(number: (\d+)\)", query)]
+            return {"repository": {f"p{n}": None for n in numbers}}
+
+        with mock.patch.object(train, "gh_graphql", gh_graphql):
+            self.assertEqual(train.pull_requests([1, 2]), [None, None])
+
+    def test_a_lookup_that_answers_with_nothing_ends_the_lookups(self):
+        queries = []
+
+        def gh_graphql(query):
+            queries.append(query)
+            return None
+
+        with mock.patch.object(train, "gh_graphql", gh_graphql):
+            self.assertEqual(train.pull_requests(list(range(1, 121))), [None] * 120)
+        self.assertEqual(len(queries), 1, "the token's GraphQL quota is gone: ask no second batch")
 
     def test_game_releases_ship_only_what_parity_main_passed(self):
         def runs(parity, checks):

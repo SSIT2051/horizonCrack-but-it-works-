@@ -243,17 +243,29 @@ PR_FIELDS = ("number title url mergedAt author { login } labels(first: 30) { nod
              "closingIssuesReferences(first: 10) { nodes { number } }")
 
 
+def gh_graphql(query):
+    """The data a GraphQL query answered with, or None when it answered with none at all (the token's GraphQL quota
+    ran out, or the API did not answer). An answer that carries errors for single fields is an answer: a repository
+    that imported another's history names pull requests that are not its own, and GitHub leaves those null."""
+    answer = json.loads(run("gh", "api", "graphql", "-f", f"query={query}", check=False) or "null") or {}
+    return answer.get("data")
+
+
 def pull_requests(numbers):
-    """The pull requests with these numbers, in that order: one GraphQL query per PR_BATCH of them."""
+    """The pull requests with these numbers, in that order, None where this repository has no such pull request:
+    one GraphQL query per PR_BATCH of them. A batch answered with no data at all ends the lookups: a release must
+    not die half way for want of a pull request nobody can read."""
     owner, name = REPO.split("/")
     found, unique = {}, list(dict.fromkeys(numbers))
     for start in range(0, len(unique), PR_BATCH):
         chunk = unique[start:start + PR_BATCH]
         fields = " ".join(f"p{number}: pullRequest(number: {number}) {{ {PR_FIELDS} }}" for number in chunk)
         query = f'query {{ repository(owner: "{owner}", name: "{name}") {{ {fields} }} }}'
-        data = gh_json("api", "graphql", "-f", f"query={query}")
-        found.update((int(key[1:]), value) for key, value in data["data"]["repository"].items())
-    return [parse_pull_request(found[number]) for number in numbers]
+        data = gh_graphql(query)
+        if data is None:
+            break
+        found.update((int(key[1:]), value) for key, value in (data.get("repository") or {}).items() if value)
+    return [parse_pull_request(found[number]) if number in found else None for number in numbers]
 
 
 def parse_pull_request(data):
@@ -492,13 +504,15 @@ def gather(kind, head, releases=None):
 
 
 def merged_between(kind, base, head):
-    """The pull requests merged into main between base and head, with their player-facing paths ("paths")."""
+    """The pull requests merged into main between base and head, with their player-facing paths ("paths"). A merge
+    of a pull request this repository does not have is left out: its files and its labels cannot be read here."""
     exporter_paths = exporters()
     merged = merged_pull_requests(base, head)
     prs = pull_requests([number for number, _ in merged])
-    for pr, (_, commit) in zip(prs, merged):
-        pr["paths"] = [path for path in changed_paths(commit) if player_facing(path, kind, exporter_paths)]
-    return prs
+    kept = [(pull, commit) for pull, (_, commit) in zip(prs, merged) if pull]
+    for pull, commit in kept:
+        pull["paths"] = [path for path in changed_paths(commit) if player_facing(path, kind, exporter_paths)]
+    return [pull for pull, _ in kept]
 
 
 def passed_on(workflow, sha):

@@ -175,6 +175,11 @@ EOF
                 cp "squashfs-root/horizon.png" "${ICON_DIR}/horizon.png"
             fi
         fi
+        # If still no icon, download from repository
+        if [[ ! -f "${ICON_DIR}/horizon.png" ]]; then
+            log "Downloading icon from repository..."
+            curl -fsSL -o "${ICON_DIR}/horizon.png" "https://raw.githubusercontent.com/${REPO}/main/packaging/icons/hicolor/256x256/apps/horizon.png" 2>/dev/null || true
+        fi
     fi
     
     # Update desktop database

@@ -481,7 +481,7 @@ impl Launcher {
                     &t,
                 )
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                    this.start_elyby_sign_in();
+                    this.start_elyby_sign_in(cx);
                     cx.notify();
                 }));
 

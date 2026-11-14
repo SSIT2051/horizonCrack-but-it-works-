@@ -116,6 +116,11 @@ enum AccountCmd {
         #[arg(long = "for")]
         target: Option<String>,
     },
+    /// Exchange an Ely.by authorization code for tokens and sign in
+    ElyByExchange {
+        /// The authorization code from the Ely.by redirect URL
+        code: String,
+    },
     /// Renew an account's session now, even when its access token is still fresh
     Refresh { who: String },
     /// Renew an account's session for a game already running: prints the read-once session file
@@ -2007,6 +2012,41 @@ fn account_command(action: AccountCmd, as_json: bool) -> Result<(), String> {
             if let Some(said) = account::no_keychain() {
                 eprintln!("{said}");
             }
+        }
+        AccountCmd::ElyByExchange { code } => {
+            let client_id = std::env::var("HORIZON_ELYBY_CLIENT_ID")
+                .unwrap_or_else(|_| "horizon-launcher".to_string());
+            let client_secret = std::env::var("HORIZON_ELYBY_CLIENT_SECRET")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .ok_or("HORIZON_ELYBY_CLIENT_SECRET not set")?;
+            let redirect_uri = std::env::var("HORIZON_ELYBY_REDIRECT_URI")
+                .unwrap_or_else(|_| "http://localhost:8080/callback".to_string());
+            let elyby_ep = account::ElyByEndpoints::live();
+            let tokens = account::elyby_exchange_code(&elyby_ep, &client_id, &client_secret, &redirect_uri, &code)?;
+            let (username, uuid) = account::elyby_user_info(&elyby_ep, &tokens.access_token)?;
+            let (mc_token, expires_in, xuid) = account::elyby_minecraft_auth(&elyby_ep, &tokens.access_token)?;
+
+            let account = account::Account {
+                uuid: uuid.replace('-', "").to_lowercase(),
+                name: username,
+                provider: account::AuthProvider::ElyBy,
+                skin: None,
+                cape: None,
+            };
+            let secrets = account::Secrets {
+                provider: account::AuthProvider::ElyBy,
+                refresh_token: tokens.refresh_token,
+                sign_in_required: false,
+                minecraft_token: mc_token,
+                minecraft_expires_at: expires_in,
+                xuid,
+                elyby_client_id: Some(client_id),
+                owns: true,
+            };
+            accounts.add(account::store(), account.clone(), &secrets)?;
+            accounts.save()?;
+            println!("Signed in with Ely.by as {}.", account.name);
         }
         AccountCmd::SignOut { who } => {
             let a = find(&accounts, &who)?;

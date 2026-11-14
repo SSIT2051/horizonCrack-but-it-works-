@@ -10,10 +10,10 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
-pub const REPO: &str = "horizon-rust/horizon";
-pub const README_URL: &str = "https://github.com/horizon-rust/horizon/blob/main/launcher/README.md";
-/// The players' page on connecting an AI agent (the website's docs/agents.md).
-pub const AGENT_DOCS_URL: &str = "https://playhorizon.dev/docs/agents";
+pub const REPO: &str = "SSIT2051/horizonCrack-but-it-works-";
+pub const README_URL: &str = "https://github.com/SSIT2051/horizonCrack-but-it-works-/blob/main/launcher/README.md";
+/// The players' page on connecting an AI agent.
+pub const AGENT_DOCS_URL: &str = "https://github.com/SSIT2051/horizonCrack-but-it-works-/blob/main/docs/agent-control.md";
 /// This launcher's version: the release workflow sets `HORIZON_LAUNCHER_VERSION` from the
 /// tag it builds (no version-bump commits); other builds say Cargo.toml's.
 pub const VERSION: &str = version_or(option_env!("HORIZON_LAUNCHER_VERSION"));
@@ -2104,6 +2104,25 @@ fn preparer_binary(dir: &Path) -> Option<PathBuf> {
     binary.is_file().then_some(binary)
 }
 
+/// Downloads the pinned version from Mojang into `dir` without ownership check (public download).
+fn download_for_public(
+    pins: &sources::Pins,
+    dir: &Path,
+    fetch: sources::Fetch,
+    log: &dyn Fn(String),
+) -> Result<(), String> {
+    let v = &pins.version;
+    let os = match sources::Os::current() {
+        sources::Os::Linux => "linux",
+        sources::Os::MacOs => "osx",
+        sources::Os::Windows => "windows",
+    };
+    log(format!("Downloading Minecraft {v} from Mojang (public)"));
+    mojang::download(pins, dir, os, 8, fetch, &mojang::CANCEL, log).map_err(|e| {
+        format!("\n  • Horizon tried to download {v} from Mojang, but: {e}")
+    })
+}
+
 /// Downloads the pinned version from Mojang into `dir` when an account in the launcher owns
 /// Minecraft (asked again now), else says what signing in would do, as the last line of the
 /// not-found error.
@@ -2403,6 +2422,8 @@ pub enum MinecraftFrom {
     Install,
     /// Mojang, for the signed-in account that owns the game ("Download and prepare").
     Mojang,
+    /// Mojang public download (no ownership check), for offline play.
+    MojangPublic,
 }
 
 /// A preparation's steps, in the order they run, as Home names them.
@@ -2476,10 +2497,15 @@ pub fn preparer(
                 .map_err(|e| e.to_string())?;
             Ok(body)
         };
-        let linked = data_dir().join("linked-minecraft");
+let linked = data_dir().join("linked-minecraft");
         if from == MinecraftFrom::Mojang {
             // Straight from Mojang (what is already there and whole is kept), for an owner only.
             download_for_owner(&pins, &own, &fetch, log)
+                .map_err(|e| e.trim_start_matches("\n  • ").to_string())?;
+            own
+        } else if from == MinecraftFrom::MojangPublic {
+            // Public download from Mojang (no ownership check), for offline play.
+            download_for_public(&pins, &own, &fetch, log)
                 .map_err(|e| e.trim_start_matches("\n  • ").to_string())?;
             own
         } else {

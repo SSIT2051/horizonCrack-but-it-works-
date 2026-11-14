@@ -43,7 +43,8 @@ pub const CONSENT_VERSION: u32 = 2;
 /// The ingest server (`crates/horizon-telemetry-server`, on Railway). `HORIZON_TELEMETRY_URL`
 /// overrides it (a local server); `HORIZON_TELEMETRY_URL=off` sends nothing at all, no ping
 /// either (tests and automated runs). What is sent still depends on the player's switches.
-pub const DEFAULT_ENDPOINT: &str = horizon_addresses::TELEMETRY;
+/// For this fork, telemetry is disabled by default.
+pub const DEFAULT_ENDPOINT: &str = "off";
 
 /// Where items are sent, if anywhere.
 pub fn endpoint() -> Option<String> {

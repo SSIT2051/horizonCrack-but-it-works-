@@ -2025,13 +2025,25 @@ impl Launcher {
     }
 
     /// Start Ely.by OAuth2 sign-in flow.
-    fn start_elyby_sign_in(&mut self) {
+    fn start_elyby_sign_in(&mut self, cx: &mut Context<Self>) {
         self.cancel_sign_in();
         self.sign_in_state = Some(SignInState::Starting);
-        // TODO: Implement Ely.by OAuth2 flow
-        // For now, show a message that it's not yet implemented
+
+        // Get Ely.by client ID from environment or use default
+        let client_id = std::env::var("HORIZON_ELYBY_CLIENT_ID")
+            .unwrap_or_else(|_| "horizon-launcher".to_string());
+        let redirect_uri = std::env::var("HORIZON_ELYBY_REDIRECT_URI")
+            .unwrap_or_else(|_| "http://localhost:8080/callback".to_string());
+
+        let elyby_ep = account::ElyByEndpoints::live();
+        let authorize_url = account::elyby_authorize_url(&elyby_ep, &client_id, &redirect_uri, "horizon-launcher");
+
+        // Open the authorization URL in the browser
+        cx.open_url(&authorize_url);
+
+        // Show the URL for manual entry
         self.sign_in_state = Some(SignInState::Done(Err(
-            "Ely.by sign-in not yet implemented".into()
+            format!("Ely.by sign-in: Open this URL in your browser and authorize the app:\n{authorize_url}\n\nAfter authorizing, you'll be redirected to {redirect_uri} with a 'code' parameter. Copy the code and run:\n  horizon-launcher account elyby-exchange <code>")
         )));
     }
 
@@ -2091,16 +2103,23 @@ impl Launcher {
                 }
                 self.accounts = accounts;
 
-                // Set as selected and start the game
+                // Set as selected and prepare the game (download from Mojang if needed)
                 if let Err(e) = self.accounts.play_as(&account.uuid) {
                     self.client_error = Some(e);
                     return;
                 }
 
-                // Trigger a play
+                // Get the version to play
+                let Some(tag) = self.selected().cloned() else {
+                    self.client_error = Some("No version selected".into());
+                    return;
+                };
+
+                // Trigger preparation with public Mojang download (no ownership check)
                 self.owner = Some(true);
                 self.owner_screen_open = false;
-                self.start_client("offline".to_string());
+                self.play_when_prepared = Some(tag);
+                self.prepare(backend::MinecraftFrom::MojangPublic);
             }
             Err(e) => {
                 self.client_error = Some(format!("Failed to create offline account: {e}"));

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Horizon Launcher - One-click Linux installer
-# Usage: curl -fsSL https://github.com/SSIT2051/horizonCrack-but-it-works-/releases/latest/download/install.sh | bash
-# Or: curl -fsSL https://raw.githubusercontent.com/SSIT2051/horizonCrack-but-it-works-/main/packaging/linux/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/SSIT2051/horizonCrack-but-it-works-/main/packaging/linux/install.sh | bash
 
 set -euo pipefail
 

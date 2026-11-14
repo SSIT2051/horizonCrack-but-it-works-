@@ -39,10 +39,10 @@ Horizon is a **complete rewrite of Minecraft: Java Edition in Rust**, targeting 
 ### Linux (CachyOS, Arch, Ubuntu, Fedora, etc.) — one command:
 
 ```bash
-curl -fsSL https://github.com/SSIT2051/horizonCrack-but-it-works-/releases/latest/download/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/SSIT2051/horizonCrack-but-it-works-/main/packaging/linux/install.sh | bash
 ```
 
-This downloads the native `.tar.gz`, installs to `~/.local/bin/horizon-launcher`, adds a desktop entry, and works on glibc **and** musl (Alpine, Void, etc.).
+This downloads the latest installer script, which fetches and installs the newest launcher release (`launcher@X.Y.Z`), installs to `~/.local/bin/horizon-launcher`, adds a desktop entry, and works on glibc **and** musl (Alpine, Void, etc.).
 
 **Arch/CachyOS native package (AUR):**
 ```bash

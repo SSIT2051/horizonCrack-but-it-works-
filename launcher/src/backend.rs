@@ -11,6 +11,8 @@ use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
 pub const REPO: &str = "SSIT2051/horizonCrack-but-it-works-";
+/// Upstream repository for game builds (launcher updates use REPO, game builds use UPSTREAM_REPO).
+pub const UPSTREAM_REPO: &str = "horizon-rust/horizon";
 pub const README_URL: &str =
     "https://github.com/SSIT2051/horizonCrack-but-it-works-/blob/main/launcher/README.md";
 /// The players' page on connecting an AI agent.
@@ -672,9 +674,26 @@ pub fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
 /// Every published release of the repository, both kinds, as GitHub's JSON (kept on disk with its
 /// ETag, and read through Kira's mirror past GitHub's rate limit: [`crate::github`]).
 fn release_list() -> Result<serde_json::Value, String> {
-    crate::github::json(&format!(
+    // Fetch from fork for launcher releases, and also from upstream for game builds
+    let fork_list = crate::github::json(&format!(
         "https://api.github.com/repos/{REPO}/releases?per_page=100"
-    ))
+    ))?;
+    let upstream_list = crate::github::json(&format!(
+        "https://api.github.com/repos/{UPSTREAM_REPO}/releases?per_page=100"
+    )).unwrap_or_else(|_| serde_json::json!([]));
+
+    // Merge the two lists (fork + upstream), deduplicating by tag
+    let mut combined = serde_json::Map::new();
+    for list in [fork_list, upstream_list] {
+        if let Some(arr) = list.as_array() {
+            for release in arr {
+                if let Some(tag) = release.get("tag_name").and_then(|t| t.as_str()) {
+                    combined.insert(tag.to_string(), release.clone());
+                }
+            }
+        }
+    }
+    Ok(serde_json::Value::Array(combined.into_values().collect()))
 }
 
 /// The releases in `list` whose tag passes `keep`, newest first, with the asset named `asset`.

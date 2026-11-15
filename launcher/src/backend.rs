@@ -680,7 +680,8 @@ fn release_list() -> Result<serde_json::Value, String> {
     ))?;
     let upstream_list = crate::github::json(&format!(
         "https://api.github.com/repos/{UPSTREAM_REPO}/releases?per_page=100"
-    )).unwrap_or_else(|_| serde_json::json!([]));
+    ))
+    .unwrap_or_else(|_| serde_json::json!([]));
 
     // Merge the two lists (fork + upstream), deduplicating by tag
     let mut combined = serde_json::Map::new();

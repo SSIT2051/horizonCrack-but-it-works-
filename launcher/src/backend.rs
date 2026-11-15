@@ -3479,9 +3479,17 @@ pub fn select_after_update(selected: Option<&str>, installed_before: &[String]) 
 pub fn install_tag(tag: &str, as_update: bool, progress: impl Fn(f32)) -> Result<String, String> {
     let releases = releases()?;
     let release = if tag == "latest" {
+        // "latest" means the newest release build (non-prerelease), or if none, the newest nightly
         releases
             .iter()
             .find(|r| r.asset.is_some() && !r.prerelease)
+            .or_else(|| {
+                // Fall back to newest nightly if no non-prerelease release found
+                releases
+                    .iter()
+                    .filter(|r| r.asset.is_some() && r.nightly.is_some())
+                    .max_by(|a, b| compare_versions(&b.tag, &a.tag))
+            })
             .ok_or("No release has a build for this platform yet.")?
     } else {
         releases

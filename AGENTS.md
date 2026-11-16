@@ -1,4 +1,4 @@
-# Horizon: a map for agents
+# Build instructions for AI agents
 
 Minecraft: Java Edition 26.3 rewritten in Rust (wgpu). Vanilla is the specification wherever it has the
 feature; performance work may differ inside as long as it stays compatible with vanilla
@@ -260,3 +260,9 @@ python3 tools/parity.py dedicated_server server_entities server_player_damage
 [docs/server-levels.md](docs/server-levels.md) (levels per dimension) ·
 [docs/rust-parity.md](docs/rust-parity.md) (what is ported) · [docs/known-issues.md](docs/known-issues.md) ·
 [docs/release-flow.md](docs/release-flow.md) · [docs/README.md](docs/README.md) (index).
+
+## Build instructions for AI agents
+
+- Use `cargo check` for compile verification during edits. Do NOT run `cargo build` unless a binary is actually needed.
+- Do NOT run `cargo clean` without asking first — it deletes the build cache and forces a full rebuild.
+- The project's `.cargo/config.toml` sets `incremental = false` and `debug = 0` on purpose (disk space). Do not change it.

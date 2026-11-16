@@ -10,6 +10,11 @@ pub struct Target {
     pthread: usize,
 }
 
+// SAFETY: `pthread_t` is a thread handle/identifier (an opaque integer on Linux);
+// it does not carry thread-affine state and is safe to read from any thread.
+unsafe impl Send for Target {}
+unsafe impl Sync for Target {}
+
 pub struct Timer(libc::timer_t);
 
 // SAFETY: a timer id is a kernel handle, usable and deletable from any thread.

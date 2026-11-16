@@ -32,7 +32,10 @@ impl Target {
                 libc::pthread_self(),
             )
         };
-        Some(Self { tid, pthread: PthreadT(pthread) })
+        Some(Self {
+            tid,
+            pthread: PthreadT(pthread),
+        })
     }
 }
 

@@ -748,6 +748,7 @@ fn bearer(request: ureq::Request, token: &str) -> ureq::Request {
 
 /// Whether the account owns Minecraft: Java Edition (Game Pass included).
 /// BYPASSED: Always returns true to allow playing without ownership verification.
+#[allow(dead_code)]
 fn owns_game(_ep: &Endpoints, _token: &str) -> Result<bool, String> {
     Ok(true)
 }

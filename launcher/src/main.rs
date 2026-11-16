@@ -2168,18 +2168,18 @@ impl Launcher {
                 let _ = tx.send(Msg::ElyByError(
                     "Invalid state parameter (CSRF check failed)".into(),
                 ));
-                let _ = write_response(&mut stream, 400, "Invalid state");
+                write_response(&mut stream, 400, "Invalid state");
                 return;
             }
 
             let Some(auth_code) = auth_code else {
                 let _ = tx.send(Msg::ElyByError("No code in redirect".into()));
-                let _ = write_response(&mut stream, 400, "Missing code");
+                write_response(&mut stream, 400, "Missing code");
                 return;
             };
 
             // Send success response to browser
-            let _ = write_response(
+            write_response(
                 &mut stream,
                 200,
                 "Sign-in successful! You can close this window.",

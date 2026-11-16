@@ -374,10 +374,10 @@ struct Launcher {
     sign_in_state: Option<SignInState>,
     /// What to say when the keychain doesn't keep sign-ins ([`account::no_keychain`]).
     keychain: Option<String>,
-    /// Whether an account here owns the game, by the keychain's last answers (the owner gate);
-    /// none until the keychain has been read.
+    /// Whether an account here owns the game: ALWAYS TRUE (ownership gate removed)
     owner: Option<bool>,
     /// Play was refused (or Home's Sign in pressed): the owner gate's screen is open.
+    /// DISABLED: always false
     owner_screen_open: bool,
     /// The game is waiting for its session (a token renewal), or a Java instance for its files
     /// and Java (`start_java`), before it starts.
@@ -685,7 +685,7 @@ impl Launcher {
             sign_in: None,
             sign_in_state: None,
             keychain: None,
-            owner: None,
+            owner: Some(true),  // Always true - ownership gate removed
             owner_screen_open: false,
             starting_client: None,
             play_when_prepared: None,
@@ -766,11 +766,12 @@ impl Launcher {
         let tx = this.tx.clone();
         let keychain_tx = this.tx.clone();
         // Asking the keychain can block (D-Bus), so not on this thread.
-        let accounts = this.accounts.clone();
+        let _accounts = this.accounts.clone();
         std::thread::spawn(move || {
-            let store = account::store();
+            let _store = account::store();
             let _ = keychain_tx.send(Msg::Keychain(account::no_keychain()));
-            let _ = keychain_tx.send(Msg::Owner(accounts.has_owner(store)));
+            // OWNERSHIP GATE REMOVED: Always true
+            let _ = keychain_tx.send(Msg::Owner(true));
         });
         std::thread::spawn(move || {
             let reused = backend::reuse_prepared_everywhere();
@@ -1158,7 +1159,7 @@ impl Launcher {
                 // The page reads is_prepared when drawn; `changed` redraws it.
                 Msg::Reused(_) => self.installed = backend::installed(),
                 Msg::Keychain(said) => self.keychain = said,
-                Msg::Owner(owns) => self.owner = Some(owns),
+                Msg::Owner(_) => self.owner = Some(true),  // Always true
                 Msg::AccountHead(uuid, url, face, failed) => {
                     self.profile_heads.loaded(&uuid, &url, face, failed)
                 }
@@ -1174,9 +1175,7 @@ impl Launcher {
                     self.auth_busy.remove(&uuid);
                     self.auth_progress.remove(&uuid);
                     if self.accounts.find(&uuid).is_some() {
-                        if status.state == account::session::State::Ready {
-                            self.owner = Some(true);
-                        }
+                        // OWNERSHIP GATE REMOVED: owner always true
                         self.auth_status.insert(uuid, status);
                         // A refresh may have saved a new name or skin: show it now.
                         let saved = Accounts::load();
@@ -1193,16 +1192,22 @@ impl Launcher {
                     self.auth_busy.remove(&uuid);
                     self.auth_progress.remove(&uuid);
                     match result {
-                        Ok(owns) => {
+                        Ok(_) => {
                             self.accounts = Accounts::load();
                             self.auth_status.remove(&uuid);
-                            self.owner = Some(owns);
+                            // OWNERSHIP GATE REMOVED: owner always true
                         }
                         Err(e) => self.sign_in_state = Some(SignInState::Done(Err(e))),
                     }
                 }
                 Msg::Playing(playing) => self.playing = playing,
                 Msg::OfficialPlayers(players) => self.official_players = players,
+                Msg::ElyByError(e) => {
+                    self.sign_in_state = Some(SignInState::Done(Err(e)));
+                }
+                Msg::ElyByExchangingCode(auth_code, code_verifier, client_id, redirect_uri) => {
+                    self.handle_elyby_code_exchange(auth_code, code_verifier, client_id, redirect_uri, cx);
+                }
                 Msg::JavaGame(id, home, cmd) => {
                     self.starting_client = None;
                     let spawned = cmd.and_then(|(cmd, vars)| {
@@ -2024,35 +2029,266 @@ impl Launcher {
         self.begin_sign_in(None);
     }
 
-    /// Start Ely.by OAuth2 sign-in flow.
+    /// Start Ely.by OAuth2 sign-in flow with PKCE.
     fn start_elyby_sign_in(&mut self, cx: &mut Context<Self>) {
         self.cancel_sign_in();
         self.sign_in_state = Some(SignInState::Starting);
 
-        // Get Ely.by client ID from environment or use default
-        let client_id = std::env::var("HORIZON_ELYBY_CLIENT_ID")
-            .unwrap_or_else(|_| "horizon-launcher".to_string());
-        let redirect_uri = std::env::var("HORIZON_ELYBY_REDIRECT_URI")
-            .unwrap_or_else(|_| "http://localhost:8080/callback".to_string());
+        use crate::account::{elyby_authorize_url, ElyByEndpoints};
+        use std::thread;
 
-        let elyby_ep = account::ElyByEndpoints::live();
-        let authorize_url =
-            account::elyby_authorize_url(&elyby_ep, &client_id, &redirect_uri, "horizon-launcher");
+        // Get Ely.by client ID (public client, no secret needed with PKCE)
+        let client_id = std::env::var("HORIZON_ELYBY_CLIENT_ID")
+            .unwrap_or_else(|_| "horizoncrack".to_string());  // Your Ely.by client ID
+
+        // Generate PKCE code_verifier and code_challenge (S256)
+        let code_verifier = crate::account::generate_pkce_verifier();
+        let code_challenge = crate::account::pkce_challenge(&code_verifier);
+
+        // Generate state for CSRF protection
+        let state = crate::account::generate_pkce_state();
+
+        // Start local HTTP server on random port
+        let listener = match std::net::TcpListener::bind("127.0.0.1:0") {
+            Ok(l) => l,
+            Err(e) => {
+                self.sign_in_state = Some(SignInState::Done(Err(format!("Failed to start local server: {e}"))));
+                return;
+            }
+        };
+        let port = match listener.local_addr() {
+            Ok(addr) => addr.port(),
+            Err(e) => {
+                self.sign_in_state = Some(SignInState::Done(Err(format!("Failed to get local port: {e}"))));
+                return;
+            }
+        };
+        let redirect_uri = format!("http://127.0.0.1:{}/callback", port);
+
+        let elyby_ep = ElyByEndpoints::live();
+        let authorize_url = elyby_authorize_url(
+            &elyby_ep,
+            &client_id,
+            &redirect_uri,
+            &state,
+            &code_challenge,
+        );
 
         // Open the authorization URL in the browser
         cx.open_url(&authorize_url);
+        self.sign_in_state = Some(SignInState::Working(account::session::Phase::ElyBy));
 
-        // Show the URL for manual entry
-        self.sign_in_state = Some(SignInState::Done(Err(
-            format!("Ely.by sign-in: Open this URL in your browser and authorize the app:\n{authorize_url}\n\nAfter authorizing, you'll be redirected to {redirect_uri} with a 'code' parameter. Copy the code and run:\n  horizon-launcher account elyby-exchange <code>")
-        )));
+        /// Write a simple HTTP response to the stream (local to this method).
+        fn write_response(stream: &mut std::net::TcpStream, status: u16, body: &str) {
+            use std::io::Write;
+            let status_text = match status {
+                200 => "OK",
+                400 => "Bad Request",
+                _ => "Error",
+            };
+            let response = format!(
+                "HTTP/1.1 {} {}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                status,
+                status_text,
+                body.len(),
+                body
+            );
+            let _ = stream.write_all(response.as_bytes());
+            let _ = stream.flush();
+        }
+
+        // Spawn thread to handle redirect
+        let tx = self.tx.clone();
+        let code_verifier_clone = code_verifier.clone();
+        let state_clone = state.clone();
+        let client_id_clone = client_id.clone();
+        thread::spawn(move || {
+            // Accept one connection
+            let (mut stream, _) = match listener.accept() {
+                Ok(s) => s,
+                Err(e) => {
+                    let _ = tx.send(Msg::ElyByError(format!("Failed to accept connection: {e}")));
+                    return;
+                }
+            };
+
+            // Read HTTP request
+            use std::io::{BufRead, BufReader};
+            let mut reader = BufReader::new(&mut stream);
+            let mut request_line = String::new();
+            if reader.read_line(&mut request_line).is_err() {
+                let _ = tx.send(Msg::ElyByError("Failed to read request".into()));
+                return;
+            }
+
+            // Parse GET /callback?code=...&state=...
+            let code = if let Some(query_start) = request_line.find('?') {
+                let query = &request_line[query_start + 1..];
+                if let Some(space_pos) = query.find(' ') {
+                    &query[..space_pos]
+                } else {
+                    query
+                }
+            } else {
+                let _ = tx.send(Msg::ElyByError("No query parameters in redirect".into()));
+                return;
+            };
+
+            // Parse code and state from query
+            let mut auth_code = None;
+            let mut returned_state = None;
+            for param in code.split('&') {
+                if let Some((key, value)) = param.split_once('=') {
+                    match key {
+                        "code" => auth_code = Some(urlencoding::decode(value).unwrap_or_default().into_owned()),
+                        "state" => returned_state = Some(urlencoding::decode(value).unwrap_or_default().into_owned()),
+                        _ => {}
+                    }
+                }
+            }
+
+            // Verify state
+            if returned_state != Some(state_clone) {
+                let _ = tx.send(Msg::ElyByError("Invalid state parameter (CSRF check failed)".into()));
+                let _ = write_response(&mut stream, 400, "Invalid state");
+                return;
+            }
+
+            let Some(auth_code) = auth_code else {
+                let _ = tx.send(Msg::ElyByError("No code in redirect".into()));
+                let _ = write_response(&mut stream, 400, "Missing code");
+                return;
+            };
+
+            // Send success response to browser
+            let _ = write_response(&mut stream, 200, "Sign-in successful! You can close this window.");
+
+            // Exchange code for tokens
+            let _ = tx.send(Msg::ElyByExchangingCode(auth_code, code_verifier_clone, client_id_clone, redirect_uri));
+        });
     }
 
     /// Play offline without any account.
     fn play_offline(&mut self) {
         self.cancel_sign_in();
-        // Create an offline account and play
-        self.create_offline_account_and_play();
+        // Prompt for offline account name (for now use default with timestamp)
+        let name = format!("Player{}", std::process::id() % 10000);
+        self.create_offline_account_and_play_with_name(name);
+    }
+
+    fn create_offline_account_and_play_with_name(&mut self, name: String) {
+        use crate::account::{create_offline_account, store, Accounts};
+
+        match create_offline_account(&name) {
+            Ok((account, secrets)) => {
+                // Save to accounts.json
+                let mut accounts = Accounts::load();
+                if let Err(e) = accounts.add(store(), account.clone(), &secrets) {
+                    self.client_error = Some(format!("Failed to create offline account: {e}"));
+                    return;
+                }
+                if let Err(e) = accounts.save() {
+                    self.client_error = Some(format!("Failed to save offline account: {e}"));
+                    return;
+                }
+                self.accounts = accounts;
+
+                // Set as selected and prepare the game
+                if let Err(e) = self.accounts.play_as(&account.uuid) {
+                    self.client_error = Some(e);
+                    return;
+                }
+
+                // Get the version to play
+                let Some(tag) = self.selected().cloned() else {
+                    self.client_error = Some("No version selected".into());
+                    return;
+                };
+
+                self.owner = Some(true);
+                self.owner_screen_open = false;
+                self.play_when_prepared = Some(tag);
+                self.prepare(backend::MinecraftFrom::MojangPublic);
+            }
+            Err(e) => {
+                self.client_error = Some(format!("Failed to create offline account: {e}"));
+            }
+        }
+    }
+
+    fn handle_elyby_code_exchange(&mut self, auth_code: String, code_verifier: String, client_id: String, redirect_uri: String, _cx: &mut Context<Self>) {
+        use crate::account::{elyby_exchange_code, finish_elyby_sign_in, ElyByEndpoints};
+
+        self.sign_in_state = Some(SignInState::Working(account::session::Phase::ElyBy));
+
+        let elyby_ep = ElyByEndpoints::live();
+
+        // Exchange code for tokens (public client with PKCE, no client_secret)
+        let tokens = match elyby_exchange_code(
+            &elyby_ep,
+            &client_id,
+            None,  // No client_secret for public client
+            &redirect_uri,
+            &auth_code,
+            Some(&code_verifier),
+        ) {
+            Ok(tokens) => tokens,
+            Err(e) => {
+                self.sign_in_state = Some(SignInState::Done(Err(format!("Ely.by token exchange failed: {e}"))));
+                return;
+            }
+        };
+
+        // Complete sign-in: get user info and Minecraft access token
+        let (account, mut secrets) = match finish_elyby_sign_in(
+            &elyby_ep,
+            &client_id,
+            "",  // client_secret not needed for public client
+            &tokens.access_token,
+            &|_| {},  // progress callback
+        ) {
+            Ok((acc, sec)) => (acc, sec),
+            Err(e) => {
+                self.sign_in_state = Some(SignInState::Done(Err(format!("Ely.by sign-in failed: {e}"))));
+                return;
+            }
+        };
+
+        // Update secrets with the refresh token from token exchange
+        secrets.refresh_token = tokens.refresh_token;
+        secrets.elyby_client_id = Some(client_id);
+
+        // Save account to keychain/accounts.json
+        use crate::account::{store, Accounts};
+        let mut accounts = Accounts::load();
+        if let Err(e) = accounts.add(store(), account.clone(), &secrets) {
+            self.sign_in_state = Some(SignInState::Done(Err(format!("Failed to save Ely.by account: {e}"))));
+            return;
+        }
+        if let Err(e) = accounts.save() {
+            self.sign_in_state = Some(SignInState::Done(Err(format!("Failed to save Ely.by account: {e}"))));
+            return;
+        }
+        self.accounts = accounts;
+
+        // Set as selected account
+        if let Err(e) = self.accounts.play_as(&account.uuid) {
+            self.sign_in_state = Some(SignInState::Done(Err(e)));
+            return;
+        }
+
+        // Get version and play
+        let Some(tag) = self.selected().cloned() else {
+            self.sign_in_state = Some(SignInState::Done(Err("No version selected".into())));
+            return;
+        };
+
+        self.owner = Some(true);
+        self.owner_screen_open = false;
+        self.play_when_prepared = Some(tag);
+        self.prepare(backend::MinecraftFrom::MojangPublic);
+        self.sign_in_state = None;
+        self.sign_in_target = None;
     }
 
     fn re_sign_in(&mut self, uuid: &str) {
@@ -2081,51 +2317,6 @@ impl Launcher {
         }
         self.sign_in_state = None;
         self.sign_in_target = None;
-    }
-
-    /// Create an offline account and start the game with it.
-    fn create_offline_account_and_play(&mut self) {
-        use crate::account::{create_offline_account, store, Accounts};
-
-        // Prompt for a name (for now use a default)
-        let name = "Player".to_string();
-
-        match create_offline_account(&name) {
-            Ok((account, secrets)) => {
-                // Save to accounts.json
-                let mut accounts = Accounts::load();
-                if let Err(e) = accounts.add(store(), account.clone(), &secrets) {
-                    self.client_error = Some(format!("Failed to create offline account: {e}"));
-                    return;
-                }
-                if let Err(e) = accounts.save() {
-                    self.client_error = Some(format!("Failed to save offline account: {e}"));
-                    return;
-                }
-                self.accounts = accounts;
-
-                // Set as selected and prepare the game (download from Mojang if needed)
-                if let Err(e) = self.accounts.play_as(&account.uuid) {
-                    self.client_error = Some(e);
-                    return;
-                }
-
-                // Get the version to play
-                let Some(tag) = self.selected().cloned() else {
-                    self.client_error = Some("No version selected".into());
-                    return;
-                };
-
-                // Trigger preparation with public Mojang download (no ownership check)
-                self.owner = Some(true);
-                self.owner_screen_open = false;
-                self.play_when_prepared = Some(tag);
-                self.prepare(backend::MinecraftFrom::MojangPublic);
-            }
-            Err(e) => {
-                self.client_error = Some(format!("Failed to create offline account: {e}"));
-            }
-        }
     }
 
     fn choose_folder(&mut self, cx: &mut Context<Self>) {

@@ -5,13 +5,9 @@
 use super::*;
 
 impl Launcher {
-    /// Whether the screen covers the window: no owner, and either Play was refused or the player
-    /// hasn't read it yet. The data question comes first.
+    /// Whether the screen covers the window: DISABLED - ownership gate removed
     pub(crate) fn asking_owner(&self) -> bool {
-        (self.owner == Some(false) || sign_in_preview())
-            && (self.owner_screen_open || !self.settings.owner_notice_seen || sign_in_preview())
-            && !self.asking_consent()
-            && self.opening.is_none()
+        false
     }
 
     /// Opens the screen and starts the sign-in on it.
@@ -60,15 +56,15 @@ impl Launcher {
             .child(
                 shell::text(theme::night::CAPTION, shell::c(n.muted))
                     .font_weight(FontWeight::SEMIBOLD)
-                    .child(tr("Microsoft account").to_string()),
+                    .child(tr("Choose how to play").to_string()),
             )
             .child(
                 shell::text(theme::night::TITLE, shell::c(n.ink))
                     .mb(px(4.))
-                    .child(tr("Sign in to play").to_string()),
+                    .child(tr("Sign in or play offline").to_string()),
             )
             .child(line(
-                "Horizon needs a Microsoft account that owns Minecraft: Java Edition, like other launchers.",
+                "Play online with Microsoft or Ely.by, or play offline on local/offline-mode servers.",
                 n.ink_soft,
             ))
             .child(line(
@@ -192,19 +188,44 @@ impl Launcher {
                 Some(
                     shell::action("owner-open", shell::Action::Main, &t)
                         .child(shell::label(tr("Open link").to_string()))
-                        .on_click(move |_, _, cx| cx.open_url(&uri)),
+                        .on_click(move |_, _, cx| cx.open_url(&uri))
+                        .into_any_element(),
                 )
             }
             Shown::Starting(_) => None,
             Shown::Error(_) if !configured => None,
-            _ => Some(
-                microsoft::sign_in_button("owner-sign-in", &t).on_click(cx.listener(
-                    |this, _: &ClickEvent, _, cx| {
+            _ => {
+                let microsoft_button = microsoft::sign_in_button("owner-sign-in-ms", &t)
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                         this.sign_in_to_play();
                         cx.notify();
-                    },
-                )),
-            ),
+                    }));
+
+                let elyby_button = shell::action("owner-sign-in-elyby", shell::Action::Raised, &t)
+                    .child(shell::label(tr("Sign in with Ely.by")))
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                        this.start_elyby_sign_in(cx);
+                        cx.notify();
+                    }));
+
+                let offline_button = shell::action("owner-play-offline", shell::Action::Raised, &t)
+                    .child(shell::label(tr("Play Offline")))
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                        this.play_offline();
+                        cx.notify();
+                    }));
+
+                Some(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(8.))
+                        .child(microsoft_button)
+                        .child(elyby_button)
+                        .child(offline_button)
+                        .into_any_element(),
+                )
+            }
         };
         let waiting = matches!(state, Shown::Code(..)).then(|| {
             shell::text(theme::night::CAPTION, shell::c(n.muted))
@@ -299,7 +320,7 @@ impl Launcher {
                     .text_size(px(28.))
                     .line_height(px(35.))
                     .text_color(white(ink::FULL))
-                    .child(tr("Sign in to play")),
+                    .child(tr("Choose how to play")),
             )
             .child(
                 div()
@@ -308,7 +329,7 @@ impl Launcher {
                     .flex_col()
                     .gap(px(8.))
                     .child(ui::text(14., FontWeight::NORMAL, ink::BODY).child(tr(
-                        "Horizon needs an account that owns Minecraft: Java Edition, like other launchers.",
+                        "Play online with Microsoft or Ely.by, or play offline on local/offline-mode servers.",
                     )))
                     .child(ui::text(14., FontWeight::NORMAL, ink::BODY).child(tr(
                         "No Minecraft install needed: Horizon downloads it from Mojang for your account.",

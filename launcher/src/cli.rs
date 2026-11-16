@@ -2023,12 +2023,15 @@ fn account_command(action: AccountCmd, as_json: bool) -> Result<(), String> {
             let redirect_uri = std::env::var("HORIZON_ELYBY_REDIRECT_URI")
                 .unwrap_or_else(|_| "http://localhost:8080/callback".to_string());
             let elyby_ep = account::ElyByEndpoints::live();
+            // For CLI, try with PKCE if code_verifier is provided via env, otherwise try without
+            let code_verifier = std::env::var("HORIZON_ELYBY_CODE_VERIFIER").ok();
             let tokens = account::elyby_exchange_code(
                 &elyby_ep,
                 &client_id,
-                &client_secret,
+                Some(&client_secret),
                 &redirect_uri,
                 &code,
+                code_verifier.as_deref(),
             )?;
             let (username, uuid) = account::elyby_user_info(&elyby_ep, &tokens.access_token)?;
             let (mc_token, expires_in, xuid) =

@@ -4312,6 +4312,10 @@ pub enum Msg {
         PathBuf,
         Result<(Command, crate::launch::Vars), String>,
     ),
+    /// Ely.by OAuth2: exchanging authorization code for tokens.
+    ElyByExchangingCode(String, String, String, String),
+    /// Ely.by OAuth2: error during sign-in flow.
+    ElyByError(String),
 }
 
 /// A running process; its output arrives as `Msg::Line`, its end as `Msg::Exit`.

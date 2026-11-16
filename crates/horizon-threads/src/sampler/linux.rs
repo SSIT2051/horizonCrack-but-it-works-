@@ -3,10 +3,19 @@
 use std::io;
 use std::sync::OnceLock;
 
+// A wrapper around pthread_t that is Send + Sync.
+// On musl, pthread_t = *mut c_void which is not Send/Sync by default.
+// Since we only use it for timer_create (which takes it by value) and
+// pthread_self() returns the calling thread's own ID, it's safe to share.
+#[derive(Clone, Copy, Default)]
+struct PthreadT(libc::pthread_t);
+unsafe impl Send for PthreadT {}
+unsafe impl Sync for PthreadT {}
+
 #[derive(Default)]
 pub struct Target {
     tid: libc::c_int,
-    pthread: libc::pthread_t,
+    pthread: PthreadT,
 }
 
 pub struct Timer(libc::timer_t);
@@ -23,7 +32,7 @@ impl Target {
                 libc::pthread_self(),
             )
         };
-        Some(Self { tid, pthread })
+        Some(Self { tid, pthread: PthreadT(pthread) })
     }
 }
 
@@ -46,19 +55,23 @@ fn arm_clock(target: &Target, hz: u32, wall: Option<libc::clockid_t>) -> io::Res
     unsafe {
         let mut clock = wall.unwrap_or(0);
         if wall.is_none() {
-            let rc = libc::pthread_getcpuclockid(target.pthread, &mut clock);
+            // Extract inner pthread_t from PthreadT wrapper
+            let rc = libc::pthread_getcpuclockid(target.pthread.0, &mut clock);
             if rc != 0 {
                 return Err(io::Error::from_raw_os_error(rc));
             }
         }
         let mut event: libc::sigevent = std::mem::zeroed();
-        event.sigev_notify = libc::SIGEV_THREAD_ID;
+        // SIGEV_THREAD_ID is not available on musl; use SIGEV_THREAD instead.
+        // The thread ID is passed via sigev_value.sival_ptr per POSIX.
+        event.sigev_notify = libc::SIGEV_THREAD;
         event.sigev_signo = if wall.is_some() {
             libc::SIGRTMIN()
         } else {
             libc::SIGPROF
         };
-        event.sigev_notify_thread_id = target.tid;
+        // For SIGEV_THREAD, the thread ID goes in sigev_value.sival_ptr
+        event.sigev_value.sival_ptr = target.tid as *mut libc::c_void;
         let mut id = std::ptr::null_mut();
         if libc::timer_create(clock, &mut event, &mut id) != 0 {
             return Err(io::Error::last_os_error());

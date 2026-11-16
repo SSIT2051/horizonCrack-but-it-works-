@@ -173,6 +173,54 @@ impl ElyByEndpoints {
     }
 }
 
+/// PKCE (RFC 7636) helper functions for Ely.by OAuth2.
+/// Generates a cryptographically random code_verifier (43-128 chars).
+pub fn generate_pkce_verifier() -> String {
+    use rand::RngCore;
+    let mut bytes = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    base64_url_encode(&bytes)
+}
+
+/// Generates code_challenge from code_verifier using S256 method.
+pub fn pkce_challenge(verifier: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let hash = Sha256::digest(verifier.as_bytes());
+    base64_url_encode(&hash)
+}
+
+/// Generates a random state parameter for CSRF protection.
+pub fn generate_pkce_state() -> String {
+    use rand::RngCore;
+    let mut bytes = [0u8; 16];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    base64_url_encode(&bytes)
+}
+
+/// Base64 URL encoding (no padding, URL-safe alphabet).
+fn base64_url_encode(input: &[u8]) -> String {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    URL_SAFE_NO_PAD.encode(input)
+}
+
+/// Ely.by authorize URL with PKCE parameters.
+pub fn elyby_authorize_url(
+    ep: &ElyByEndpoints,
+    client_id: &str,
+    redirect_uri: &str,
+    state: &str,
+    code_challenge: &str,
+) -> String {
+    format!(
+        "{}?client_id={}&redirect_uri={}&scope=account_info%20minecraft_server_session%20offline_access&response_type=code&state={}&code_challenge={}&code_challenge_method=S256",
+        ep.authorize,
+        client_id,
+        redirect_uri,
+        state,
+        code_challenge
+    )
+}
+
 /// Orders resolved addresses so the two families alternate, the first one's address first (the
 /// order RFC 8305 asks a client to try them in). A host whose IPv6 route is dead then costs one
 /// short attempt before its IPv4 address is tried, instead of every AAAA record in turn.
@@ -447,36 +495,33 @@ impl std::fmt::Debug for ElyByTokens {
     }
 }
 
-/// Build the Ely.by authorization URL.
-pub fn elyby_authorize_url(
-    ep: &ElyByEndpoints,
-    client_id: &str,
-    redirect_uri: &str,
-    state: &str,
-) -> String {
-    format!(
-        "{}?client_id={}&redirect_uri={}&scope=account_info%20minecraft_server_session%20offline_access&response_type=code&state={}",
-        ep.authorize, client_id, redirect_uri, state
-    )
-}
-
 /// Exchange the authorization code for tokens.
+/// For public clients (no secret), provide `code_verifier` for PKCE and omit `client_secret`.
 pub fn elyby_exchange_code(
     ep: &ElyByEndpoints,
     client_id: &str,
-    client_secret: &str,
+    client_secret: Option<&str>,
     redirect_uri: &str,
     code: &str,
+    code_verifier: Option<&str>,
 ) -> Result<ElyByTokens, String> {
+    let mut form = vec![
+        ("grant_type", "authorization_code"),
+        ("client_id", client_id),
+        ("redirect_uri", redirect_uri),
+        ("code", code),
+    ];
+    if let Some(secret) = client_secret {
+        if !secret.is_empty() {
+            form.push(("client_secret", secret));
+        }
+    }
+    if let Some(verifier) = code_verifier {
+        form.push(("code_verifier", verifier));
+    }
     let (status, v) = send(
         request_to("POST", &ep.token),
-        Some(Body::Form(vec![
-            ("grant_type", "authorization_code"),
-            ("client_id", client_id),
-            ("client_secret", client_secret),
-            ("redirect_uri", redirect_uri),
-            ("code", code),
-        ])),
+        Some(Body::Form(form)),
         "Ely.by",
     )?;
     match (
@@ -500,20 +545,26 @@ pub fn elyby_exchange_code(
 }
 
 /// Refresh the Ely.by access token.
+/// For public clients, `client_secret` can be omitted (empty string or None).
 pub fn elyby_refresh_token(
     ep: &ElyByEndpoints,
     client_id: &str,
-    client_secret: &str,
+    client_secret: Option<&str>,
     refresh_token: &str,
 ) -> Result<ElyByTokens, String> {
+    let mut form = vec![
+        ("grant_type", "refresh_token"),
+        ("client_id", client_id),
+        ("refresh_token", refresh_token),
+    ];
+    if let Some(secret) = client_secret {
+        if !secret.is_empty() {
+            form.push(("client_secret", secret));
+        }
+    }
     let (status, v) = send(
         request_to("POST", &ep.token),
-        Some(Body::Form(vec![
-            ("grant_type", "refresh_token"),
-            ("client_id", client_id),
-            ("client_secret", client_secret),
-            ("refresh_token", refresh_token),
-        ])),
+        Some(Body::Form(form)),
         "Ely.by",
     )?;
     match (
@@ -696,28 +747,9 @@ fn bearer(request: ureq::Request, token: &str) -> ureq::Request {
 }
 
 /// Whether the account owns Minecraft: Java Edition (Game Pass included).
-fn owns_game(ep: &Endpoints, token: &str) -> Result<bool, String> {
-    let (status, v) = send(
-        bearer(
-            request_to("GET", &format!("{}/entitlements/mcstore", ep.minecraft)),
-            token,
-        ),
-        None,
-        "the Minecraft services",
-    )?;
-    if status != 200 {
-        return Err("Could not check which games this account owns.".into());
-    }
-    Ok(v.get("items")
-        .and_then(Value::as_array)
-        .is_some_and(|items| {
-            items.iter().any(|i| {
-                matches!(
-                    i.get("name").and_then(Value::as_str),
-                    Some("game_minecraft" | "product_minecraft")
-                )
-            })
-        }))
+/// BYPASSED: Always returns true to allow playing without ownership verification.
+fn owns_game(_ep: &Endpoints, _token: &str) -> Result<bool, String> {
+    Ok(true)
 }
 
 /// Authentication provider for an account.
@@ -843,10 +875,7 @@ pub fn finish_sign_in_with_progress(
     progress: &dyn Fn(session::Phase),
 ) -> Result<(Account, Secrets), String> {
     let mc = minecraft_login(ep, &ms.access, progress)?;
-    progress(session::Phase::Ownership);
-    if !owns_game(ep, &mc.token)? {
-        return Err(DOES_NOT_OWN.into());
-    }
+    // OWNERSHIP CHECK BYPASSED: Skip ownership verification
     progress(session::Phase::Profile);
     let account = profile(ep, &mc.token)?.ok_or(NO_PROFILE)?;
     Ok((
@@ -1031,7 +1060,7 @@ fn check_with(
                 let renewed = elyby_refresh_token(
                     elyby_ep,
                     client_id,
-                    &client_secret,
+                    Some(&client_secret),
                     &secrets.refresh_token,
                 );
                 let tokens = match renewed {
@@ -1071,18 +1100,14 @@ fn check_with(
     let token = &secrets.minecraft_token;
     progress(session::Phase::Ownership);
 
-    // For offline accounts, always return Owns
+    // OWNERSHIP CHECK BYPASSED: All providers are treated as owning the game
+    // Just verify the profile exists (or skip for offline)
     if secrets.provider == AuthProvider::Offline {
         return Check::Owns(account.clone(), secrets);
     }
 
-    match owns_game(ep, token).and_then(|owns| {
-        if !owns {
-            return Ok(None);
-        }
-        progress(session::Phase::Profile);
-        profile(ep, token)
-    }) {
+    // For Microsoft and Ely.by, just check profile exists (no ownership check)
+    match profile(ep, token) {
         Err(e) => Check::NoAnswer(e, secrets),
         Ok(None) => Check::DoesNot(Secrets {
             owns: false,

@@ -685,7 +685,7 @@ impl Launcher {
             sign_in: None,
             sign_in_state: None,
             keychain: None,
-            owner: Some(true),  // Always true - ownership gate removed
+            owner: Some(true), // Always true - ownership gate removed
             owner_screen_open: false,
             starting_client: None,
             play_when_prepared: None,
@@ -1159,7 +1159,7 @@ impl Launcher {
                 // The page reads is_prepared when drawn; `changed` redraws it.
                 Msg::Reused(_) => self.installed = backend::installed(),
                 Msg::Keychain(said) => self.keychain = said,
-                Msg::Owner(_) => self.owner = Some(true),  // Always true
+                Msg::Owner(_) => self.owner = Some(true), // Always true
                 Msg::AccountHead(uuid, url, face, failed) => {
                     self.profile_heads.loaded(&uuid, &url, face, failed)
                 }
@@ -1206,7 +1206,13 @@ impl Launcher {
                     self.sign_in_state = Some(SignInState::Done(Err(e)));
                 }
                 Msg::ElyByExchangingCode(auth_code, code_verifier, client_id, redirect_uri) => {
-                    self.handle_elyby_code_exchange(auth_code, code_verifier, client_id, redirect_uri, cx);
+                    self.handle_elyby_code_exchange(
+                        auth_code,
+                        code_verifier,
+                        client_id,
+                        redirect_uri,
+                        cx,
+                    );
                 }
                 Msg::JavaGame(id, home, cmd) => {
                     self.starting_client = None;
@@ -2038,8 +2044,8 @@ impl Launcher {
         use std::thread;
 
         // Get Ely.by client ID (public client, no secret needed with PKCE)
-        let client_id = std::env::var("HORIZON_ELYBY_CLIENT_ID")
-            .unwrap_or_else(|_| "horizoncrack".to_string());  // Your Ely.by client ID
+        let client_id =
+            std::env::var("HORIZON_ELYBY_CLIENT_ID").unwrap_or_else(|_| "horizoncrack".to_string()); // Your Ely.by client ID
 
         // Generate PKCE code_verifier and code_challenge (S256)
         let code_verifier = crate::account::generate_pkce_verifier();
@@ -2052,14 +2058,18 @@ impl Launcher {
         let listener = match std::net::TcpListener::bind("127.0.0.1:0") {
             Ok(l) => l,
             Err(e) => {
-                self.sign_in_state = Some(SignInState::Done(Err(format!("Failed to start local server: {e}"))));
+                self.sign_in_state = Some(SignInState::Done(Err(format!(
+                    "Failed to start local server: {e}"
+                ))));
                 return;
             }
         };
         let port = match listener.local_addr() {
             Ok(addr) => addr.port(),
             Err(e) => {
-                self.sign_in_state = Some(SignInState::Done(Err(format!("Failed to get local port: {e}"))));
+                self.sign_in_state = Some(SignInState::Done(Err(format!(
+                    "Failed to get local port: {e}"
+                ))));
                 return;
             }
         };
@@ -2140,8 +2150,14 @@ impl Launcher {
             for param in code.split('&') {
                 if let Some((key, value)) = param.split_once('=') {
                     match key {
-                        "code" => auth_code = Some(urlencoding::decode(value).unwrap_or_default().into_owned()),
-                        "state" => returned_state = Some(urlencoding::decode(value).unwrap_or_default().into_owned()),
+                        "code" => {
+                            auth_code =
+                                Some(urlencoding::decode(value).unwrap_or_default().into_owned())
+                        }
+                        "state" => {
+                            returned_state =
+                                Some(urlencoding::decode(value).unwrap_or_default().into_owned())
+                        }
                         _ => {}
                     }
                 }
@@ -2149,7 +2165,9 @@ impl Launcher {
 
             // Verify state
             if returned_state != Some(state_clone) {
-                let _ = tx.send(Msg::ElyByError("Invalid state parameter (CSRF check failed)".into()));
+                let _ = tx.send(Msg::ElyByError(
+                    "Invalid state parameter (CSRF check failed)".into(),
+                ));
                 let _ = write_response(&mut stream, 400, "Invalid state");
                 return;
             }
@@ -2161,10 +2179,19 @@ impl Launcher {
             };
 
             // Send success response to browser
-            let _ = write_response(&mut stream, 200, "Sign-in successful! You can close this window.");
+            let _ = write_response(
+                &mut stream,
+                200,
+                "Sign-in successful! You can close this window.",
+            );
 
             // Exchange code for tokens
-            let _ = tx.send(Msg::ElyByExchangingCode(auth_code, code_verifier_clone, client_id_clone, redirect_uri));
+            let _ = tx.send(Msg::ElyByExchangingCode(
+                auth_code,
+                code_verifier_clone,
+                client_id_clone,
+                redirect_uri,
+            ));
         });
     }
 
@@ -2216,7 +2243,14 @@ impl Launcher {
         }
     }
 
-    fn handle_elyby_code_exchange(&mut self, auth_code: String, code_verifier: String, client_id: String, redirect_uri: String, _cx: &mut Context<Self>) {
+    fn handle_elyby_code_exchange(
+        &mut self,
+        auth_code: String,
+        code_verifier: String,
+        client_id: String,
+        redirect_uri: String,
+        _cx: &mut Context<Self>,
+    ) {
         use crate::account::{elyby_exchange_code, finish_elyby_sign_in, ElyByEndpoints};
 
         self.sign_in_state = Some(SignInState::Working(account::session::Phase::ElyBy));
@@ -2227,14 +2261,16 @@ impl Launcher {
         let tokens = match elyby_exchange_code(
             &elyby_ep,
             &client_id,
-            None,  // No client_secret for public client
+            None, // No client_secret for public client
             &redirect_uri,
             &auth_code,
             Some(&code_verifier),
         ) {
             Ok(tokens) => tokens,
             Err(e) => {
-                self.sign_in_state = Some(SignInState::Done(Err(format!("Ely.by token exchange failed: {e}"))));
+                self.sign_in_state = Some(SignInState::Done(Err(format!(
+                    "Ely.by token exchange failed: {e}"
+                ))));
                 return;
             }
         };
@@ -2243,13 +2279,15 @@ impl Launcher {
         let (account, mut secrets) = match finish_elyby_sign_in(
             &elyby_ep,
             &client_id,
-            "",  // client_secret not needed for public client
+            "", // client_secret not needed for public client
             &tokens.access_token,
-            &|_| {},  // progress callback
+            &|_| {}, // progress callback
         ) {
             Ok((acc, sec)) => (acc, sec),
             Err(e) => {
-                self.sign_in_state = Some(SignInState::Done(Err(format!("Ely.by sign-in failed: {e}"))));
+                self.sign_in_state = Some(SignInState::Done(Err(format!(
+                    "Ely.by sign-in failed: {e}"
+                ))));
                 return;
             }
         };
@@ -2262,11 +2300,15 @@ impl Launcher {
         use crate::account::{store, Accounts};
         let mut accounts = Accounts::load();
         if let Err(e) = accounts.add(store(), account.clone(), &secrets) {
-            self.sign_in_state = Some(SignInState::Done(Err(format!("Failed to save Ely.by account: {e}"))));
+            self.sign_in_state = Some(SignInState::Done(Err(format!(
+                "Failed to save Ely.by account: {e}"
+            ))));
             return;
         }
         if let Err(e) = accounts.save() {
-            self.sign_in_state = Some(SignInState::Done(Err(format!("Failed to save Ely.by account: {e}"))));
+            self.sign_in_state = Some(SignInState::Done(Err(format!(
+                "Failed to save Ely.by account: {e}"
+            ))));
             return;
         }
         self.accounts = accounts;

@@ -195,11 +195,12 @@ impl Launcher {
             Shown::Starting(_) => None,
             Shown::Error(_) if !configured => None,
             _ => {
-                let microsoft_button = microsoft::sign_in_button("owner-sign-in-ms", &t)
-                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                let microsoft_button = microsoft::sign_in_button("owner-sign-in-ms", &t).on_click(
+                    cx.listener(|this, _: &ClickEvent, _, cx| {
                         this.sign_in_to_play();
                         cx.notify();
-                    }));
+                    }),
+                );
 
                 let elyby_button = shell::action("owner-sign-in-elyby", shell::Action::Raised, &t)
                     .child(shell::label(tr("Sign in with Ely.by")))
